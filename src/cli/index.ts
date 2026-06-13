@@ -1,0 +1,160 @@
+#!/usr/bin/env node
+
+import { resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { writeSingleTemplate, writeAssembly, readAssemblyManifest, readTemplate, AssemblyConfig } from "./assembly.js";
+import { diffTemplates, formatDiff } from "./diff.js";
+import { synth, synthMulti } from "../runtime/synth.js";
+import { getAssetManifest } from "../runtime/assets.js";
+import { getStackAssignments } from "../runtime/stacks.js";
+import { buildGraph } from "../runtime/graph.js";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+
+const DEFAULT_OUT_DIR = ".cloud-assembly";
+const DEFAULT_ENTRY = "skein.app.ts";
+
+function usage() {
+  console.log(`
+skein - IaC framework based on monoidal composition
+
+Usage:
+  skein synth [--entry <file>] [--out <dir>]
+  skein diff  [--entry <file>] [--out <dir>]
+
+Commands:
+  synth   Run the app and produce a cloud assembly
+  diff    Synth and show what changed vs. the last assembly
+
+Options:
+  --entry <file>   Entrypoint file (default: ${DEFAULT_ENTRY})
+  --out <dir>      Output directory (default: ${DEFAULT_OUT_DIR})
+`);
+}
+
+function parseArgs(args: string[]): { command: string; entry: string; outDir: string } {
+  const command = args[0] ?? "";
+  let entry = DEFAULT_ENTRY;
+  let outDir = DEFAULT_OUT_DIR;
+
+  for (let i = 1; i < args.length; i++) {
+    if (args[i] === "--entry" && args[i + 1]) {
+      entry = args[++i];
+    } else if (args[i] === "--out" && args[i + 1]) {
+      outDir = args[++i];
+    }
+  }
+
+  return { command, entry: resolve(entry), outDir: resolve(outDir) };
+}
+
+async function loadApp(entryPath: string): Promise<void> {
+  if (!existsSync(entryPath)) {
+    console.error(`Error: entry file not found: ${entryPath}`);
+    process.exit(1);
+  }
+  await import(entryPath);
+}
+
+function writeCloudAssembly(outDir: string): void {
+  const config: AssemblyConfig = { outDir };
+  const assetManifest = getAssetManifest();
+  const stackAssignments = getStackAssignments();
+
+  if (stackAssignments.size > 0) {
+    const output = synthMulti();
+    writeAssembly(output, assetManifest, config);
+  } else {
+    const template = synth();
+    writeSingleTemplate(template, assetManifest, config);
+  }
+
+  const graph = buildGraph();
+  writeFileSync(join(outDir, "graph.json"), JSON.stringify(graph, null, 2));
+}
+
+async function commandSynth(entry: string, outDir: string) {
+  await loadApp(entry);
+  writeCloudAssembly(outDir);
+  console.log(`Cloud assembly written to ${outDir}`);
+}
+
+async function commandDiff(entry: string, outDir: string) {
+  // Read previous assembly
+  const prevManifest = readAssemblyManifest(outDir);
+  const prevTemplates = new Map<string, ReturnType<typeof readTemplate>>();
+  if (prevManifest) {
+    for (const [stackName, stackDef] of Object.entries(prevManifest.stacks)) {
+      prevTemplates.set(stackName, readTemplate(outDir, stackDef.template));
+    }
+  }
+
+  // Load app and write assembly
+  await loadApp(entry);
+  writeCloudAssembly(outDir);
+
+  // Read new assembly
+  const newManifest = readAssemblyManifest(outDir);
+  if (!newManifest) {
+    console.error("Error: synth did not produce a cloud assembly.");
+    process.exit(1);
+  }
+
+  // Diff each stack
+  let hasChanges = false;
+  for (const [stackName, stackDef] of Object.entries(newManifest.stacks)) {
+    const prev = prevTemplates.get(stackName) ?? null;
+    const curr = readTemplate(outDir, stackDef.template);
+    if (!curr) continue;
+
+    const entries = diffTemplates(prev, curr);
+    if (entries.length > 0) {
+      hasChanges = true;
+      console.log(`\nStack: ${stackName}`);
+      console.log(formatDiff(entries));
+    }
+  }
+
+  // Check for removed stacks
+  if (prevManifest) {
+    for (const stackName of Object.keys(prevManifest.stacks)) {
+      if (!newManifest.stacks[stackName]) {
+        hasChanges = true;
+        console.log(`\nStack: ${stackName} (REMOVED)`);
+      }
+    }
+  }
+
+  if (!hasChanges) {
+    console.log("\nNo changes.");
+  }
+}
+
+async function main() {
+  const args = process.argv.slice(2);
+
+  if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
+    usage();
+    process.exit(0);
+  }
+
+  const { command, entry, outDir } = parseArgs(args);
+
+  switch (command) {
+    case "synth":
+      await commandSynth(entry, outDir);
+      break;
+    case "diff":
+      await commandDiff(entry, outDir);
+      break;
+    default:
+      console.error(`Unknown command: ${command}`);
+      usage();
+      process.exit(1);
+  }
+}
+
+main().catch((err) => {
+  console.error(err.message);
+  process.exit(1);
+});

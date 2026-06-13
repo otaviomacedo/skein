@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.cloud-assembly/
+studio/node_modules/
+studio/dist/
+*.tsbuildinfo
+.idea/
+src/generated/
+codegen/cfn-spec.json

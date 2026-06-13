@@ -1,0 +1,26 @@
+{
+  "name": "skein",
+  "version": "0.1.0",
+  "description": "IaC framework based on monoidal composition of wiring diagrams",
+  "type": "module",
+  "bin": {
+    "skein": "./bin/skein.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "generate": "tsx codegen/generate.ts codegen/cfn-spec.json src/generated codegen/relationships.json",
+    "fetch-spec": "curl -sL --compressed https://d1uauaxba7bl26.cloudfront.net/latest/gzip/CloudFormationResourceSpecification.json -o codegen/cfn-spec.json",
+    "studio": "cd studio && npx vite"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^25.9.3",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  }
+}
