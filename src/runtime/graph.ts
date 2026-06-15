@@ -67,12 +67,16 @@ export function recordBoxCall(
   return id;
 }
 
+const producerSnapshots: Map<string, { callId: string; outputIndex: number }>[] = [];
+
 export function pushBoxContext(callId: string): void {
   callStack.push(callId);
+  producerSnapshots.push(new Map(latestProducer));
 }
 
 export function popBoxContext(): void {
   callStack.pop();
+  producerSnapshots.pop();
 }
 
 export function updateBoxOutputs(callId: string, outputs: WireRef[]): void {
@@ -80,8 +84,22 @@ export function updateBoxOutputs(callId: string, outputs: WireRef[]): void {
   if (!call) return;
   call.outputs = outputs;
 
+  const outputIds = new Set(outputs.map(o => o.resourceId));
+
   for (let i = 0; i < outputs.length; i++) {
     latestProducer.set(outputs[i].resourceId, { callId, outputIndex: i });
+  }
+
+  // Restore producers for resources consumed but not output by this box
+  const snapshot = producerSnapshots.length > 0
+    ? producerSnapshots[producerSnapshots.length - 1]
+    : null;
+  if (snapshot) {
+    for (const [resourceId, prev] of snapshot) {
+      if (!outputIds.has(resourceId)) {
+        latestProducer.set(resourceId, prev);
+      }
+    }
   }
 }
 
@@ -96,4 +114,5 @@ export function resetGraph(): void {
   edges.length = 0;
   latestProducer.clear();
   callStack.length = 0;
+  producerSnapshots.length = 0;
 }

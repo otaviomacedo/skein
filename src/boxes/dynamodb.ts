@@ -1,5 +1,5 @@
 import { Function } from "../lib/lambda.js";
-import { Table, getTableAtt } from "../generated/dynamodb.js";
+import { Table } from "../generated/dynamodb.js";
 import { Policy, mkPolicy, Role } from "../generated/iam.js";
 import { ref, deriveId } from "../runtime/resource.js";
 import { box } from "../runtime/box.js";
@@ -21,8 +21,8 @@ export const grantTableRead = box(
             "dynamodb:BatchGetItem",
           ],
           Resource: [
-            getTableAtt(table, "Arn"),
-            `${getTableAtt(table, "Arn")}/index/*`,
+            table.arn,
+            `${table.arn}/index/*`,
           ],
         }],
       },
@@ -53,8 +53,8 @@ export const grantTableReadWrite = box(
             "dynamodb:BatchWriteItem",
           ],
           Resource: [
-            getTableAtt(table, "Arn"),
-            `${getTableAtt(table, "Arn")}/index/*`,
+            table.arn,
+            `${table.arn}/index/*`,
           ],
         }],
       },

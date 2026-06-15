@@ -9,16 +9,12 @@
  */
 
 import { mkTable } from "../../src/generated/dynamodb.js";
-import { mkQueue, getQueueAtt } from "../../src/generated/sqs.js";
-import { mkTopic, getTopicAtt } from "../../src/generated/sns.js";
-import { ref } from "../../src/runtime/resource.js";
-import { pipe } from "../../src/boxes/pipe.js";
-import { mkLambda } from "../../src/boxes/lambda-helpers.js";
-import { addEnvironment } from "../../src/boxes/lambda.js";
-import { grantTableReadWrite } from "../../src/boxes/dynamodb.js";
-import { grantSendMessage, triggerFromQueue, withDLQ } from "../../src/boxes/sqs.js";
-import { onSchedule } from "../../src/boxes/events.js";
+import { mkQueue } from "../../src/generated/sqs.js";
+import { mkTopic } from "../../src/generated/sns.js";
+import { withDLQ } from "../../src/boxes/sqs.js";
 import { alarmOnMetric, notifyOnAlarm } from "../../src/boxes/monitoring.js";
+import { scheduledProcessor } from "../../src/boxes/scheduled-processor.js";
+import { queueProcessor } from "../../src/boxes/queue-processor.js";
 
 // === Data Stores ===
 
@@ -53,46 +49,39 @@ const alertTopic = mkTopic("AlertTopic", {
   topicName: "data-pipeline-alerts",
 });
 
-// === Functions ===
+// === Processors ===
 
-const processor = mkLambda("Processor", {
-  runtime: "nodejs20.x",
-  handler: "index.handler",
-  code: { s3Bucket: "pipeline-code", s3Key: "processor.zip" },
-  timeout: 60,
-  memorySize: 256,
+scheduledProcessor("Processor", {
+  schedule: "rate(5 minutes)",
+  table: dataTable,
+  failureQueue,
+  functionProps: {
+    runtime: "nodejs20.x",
+    handler: "index.handler",
+    code: { s3Bucket: "pipeline-code", s3Key: "processor.zip" },
+    timeout: 60,
+    memorySize: 256,
+  },
 });
 
-const reprocessor = mkLambda("Reprocessor", {
-  runtime: "nodejs20.x",
-  handler: "index.handler",
-  code: { s3Bucket: "pipeline-code", s3Key: "reprocessor.zip" },
-  timeout: 120,
-  memorySize: 256,
+queueProcessor("Reprocessor", {
+  table: dataTable,
+  queue: failureQueue,
+  functionProps: {
+    runtime: "nodejs20.x",
+    handler: "index.handler",
+    code: { s3Bucket: "pipeline-code", s3Key: "reprocessor.zip" },
+    timeout: 120,
+    memorySize: 256,
+  },
 });
-
-// === Wiring ===
-
-pipe(processor)
-  .to(grantTableReadWrite, dataTable)
-  .to(grantSendMessage, failureQueue)
-  .to(onSchedule, "rate(5 minutes)")
-  .to(addEnvironment, "TABLE_NAME", ref(dataTable))
-  .to(addEnvironment, "FAILURE_QUEUE_URL", getQueueAtt(failureQueue, "QueueUrl"))
-  .done();
-
-pipe(reprocessor)
-  .to(grantTableReadWrite, dataTable)
-  .to(triggerFromQueue, failureQueue)
-  .to(addEnvironment, "TABLE_NAME", ref(dataTable))
-  .done();
 
 // === Monitoring ===
 
 const dlqAlarm = alarmOnMetric("DLQMessageAlarm", {
   namespace: "AWS/SQS",
   metricName: "ApproximateNumberOfMessagesVisible",
-  dimensions: [{ name: "QueueName", value: getQueueAtt(dlq, "QueueName") }],
+  dimensions: [{ name: "QueueName", value: dlq.queueName }],
   statistic: "Sum",
   period: 300,
   threshold: 1,

@@ -244,6 +244,10 @@ function generateAttributeUnion(attributes: Record<string, AttributeDef>): strin
   return union;
 }
 
+function getSimpleAttributes(attributes: Record<string, AttributeDef>): string[] {
+  return Object.keys(attributes).filter((k) => !k.includes("."));
+}
+
 function generateResource(
   cfnType: string,
   resourceSpec: ResourceSpec,
@@ -281,30 +285,47 @@ function generateResource(
     lines.push("");
   }
 
-  // Resource type (includes typed ref fields)
+  // Resource type (includes typed ref fields and attribute accessors)
   const refFields = typedRefs.map((tr) => `${toCamelCase(tr.propName)}: ${tr.targetResourceName}`).join("; ");
-  const refExtension = refFields ? ` & { ${refFields} }` : "";
-  const propsType = Object.keys(props).length > 0 ? `{ properties: ${propsName} }` : "{}";
+  const simpleAttrs = getSimpleAttributes(attrs);
+  const refFieldNames = new Set(typedRefs.map((tr) => toCamelCase(tr.propName)));
+  const attrAccessors = simpleAttrs.filter((a) => !refFieldNames.has(toCamelCase(a)));
+  const attrFields = attrAccessors.map((a) => `${toCamelCase(a)}: string`).join("; ");
+  const extensions: string[] = [];
+  if (Object.keys(props).length > 0) extensions.push(`{ properties: ${propsName} }`);
+  else extensions.push("{}");
+  if (refFields) extensions.push(`{ ${refFields} }`);
+  if (attrFields) extensions.push(`{ ${attrFields} }`);
   lines.push(
-    `export type ${resourceName} = Resource<"${cfnType}"> & ${propsType}${refExtension};`,
+    `export type ${resourceName} = Resource<"${cfnType}"> & ${extensions.join(" & ")};`,
   );
   lines.push("");
 
   // Generator function
+  const needsAssign = typedRefs.length > 0 || attrAccessors.length > 0;
   if (Object.keys(props).length > 0) {
     lines.push(
       `export function mk${resourceName}(logicalId: string, props: ${propsName}): ${resourceName} {`,
     );
-    if (typedRefs.length > 0) {
-      // Build raw props with resolution, attach typed fields
-      lines.push(`  const rawProps: Record<string, unknown> = { ...props as any };`);
-      for (const tr of typedRefs) {
-        const camel = toCamelCase(tr.propName);
-        lines.push(`  if (props.${camel}) rawProps.${camel} = get${tr.targetResourceName}Att(props.${camel}, "${tr.attribute}");`);
+    if (needsAssign) {
+      if (typedRefs.length > 0) {
+        lines.push(`  const rawProps: Record<string, unknown> = { ...props as any };`);
+        for (const tr of typedRefs) {
+          const camel = toCamelCase(tr.propName);
+          lines.push(`  if (props.${camel}) rawProps.${camel} = get${tr.targetResourceName}Att(props.${camel}, "${tr.attribute}");`);
+        }
+        lines.push(`  const resource = makeResource("${cfnType}", logicalId, rawProps);`);
+      } else {
+        lines.push(`  const resource = makeResource("${cfnType}", logicalId, props);`);
       }
-      lines.push(`  const resource = makeResource("${cfnType}", logicalId, rawProps);`);
-      const assigns = typedRefs.map((tr) => `${toCamelCase(tr.propName)}: props.${toCamelCase(tr.propName)}`).join(", ");
-      lines.push(`  return Object.assign(resource, { ${assigns} }) as ${resourceName};`);
+      const assigns: string[] = [];
+      for (const tr of typedRefs) {
+        assigns.push(`${toCamelCase(tr.propName)}: props.${toCamelCase(tr.propName)}`);
+      }
+      for (const attr of attrAccessors) {
+        assigns.push(`${toCamelCase(attr)}: getAtt(resource, "${attr}")`);
+      }
+      lines.push(`  return Object.assign(resource, { ${assigns.join(", ")} }) as ${resourceName};`);
     } else {
       lines.push(
         `  return makeResource("${cfnType}", logicalId, props) as ${resourceName};`,
@@ -315,9 +336,15 @@ function generateResource(
     lines.push(
       `export function mk${resourceName}(logicalId: string): ${resourceName} {`,
     );
-    lines.push(
-      `  return makeResource("${cfnType}", logicalId, {}) as ${resourceName};`,
-    );
+    if (attrAccessors.length > 0) {
+      lines.push(`  const resource = makeResource("${cfnType}", logicalId, {});`);
+      const assigns = attrAccessors.map((attr) => `${toCamelCase(attr)}: getAtt(resource, "${attr}")`).join(", ");
+      lines.push(`  return Object.assign(resource, { ${assigns} }) as ${resourceName};`);
+    } else {
+      lines.push(
+        `  return makeResource("${cfnType}", logicalId, {}) as ${resourceName};`,
+      );
+    }
     lines.push("}");
   }
   lines.push("");

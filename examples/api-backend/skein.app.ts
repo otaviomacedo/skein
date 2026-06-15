@@ -8,7 +8,7 @@
  */
 
 import { mkTable } from "../../src/generated/dynamodb.js";
-import { mkQueue, getQueueAtt } from "../../src/generated/sqs.js";
+import { mkQueue } from "../../src/generated/sqs.js";
 import { mkAsset } from "../../src/runtime/assets.js";
 import { ref } from "../../src/runtime/resource.js";
 import { pipe } from "../../src/boxes/pipe.js";
@@ -79,7 +79,7 @@ pipe(apiFn)
   .to(grantTableReadWrite, itemsTable)
   .to(grantSendMessage, workQueue)
   .to(addEnvironment, "TABLE_NAME", ref(itemsTable))
-  .to(addEnvironment, "QUEUE_URL", getQueueAtt(workQueue, "QueueUrl"))
+  .to(addEnvironment, "QUEUE_URL", workQueue.queueUrl)
   .done();
 
 pipe(workerFn)

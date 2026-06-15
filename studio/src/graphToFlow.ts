@@ -50,13 +50,11 @@ export function graphToFlow(
     }
   }
 
-  // Compute levels on visible nodes only
-  const visibleEdges = graph.edges.filter(
-    (e) => visibleNodes.has(e.from) && visibleNodes.has(e.to),
-  );
+  // Promote edges: if source or target is hidden, reroute to nearest visible ancestor
+  const promotedEdges = promoteEdges(graph.edges, visibleNodes, nodesById);
   const levels = computeLevels(
     graph.nodes.filter((n) => visibleNodes.has(n.id)),
-    visibleEdges,
+    promotedEdges,
   );
 
   const X_SPACING = 280;
@@ -95,8 +93,14 @@ export function graphToFlow(
     });
   }
 
-  // Edges: only between visible nodes
-  for (const edge of visibleEdges) {
+  // Edges: render promoted edges (deduplicated, no self-loops)
+  const edgeSeen = new Set<string>();
+  for (const edge of promotedEdges) {
+    if (edge.from === edge.to) continue;
+    const key = `${edge.from}-${edge.to}`;
+    if (edgeSeen.has(key)) continue;
+    edgeSeen.add(key);
+
     const sourceNode = nodesById.get(edge.from);
     const output = sourceNode?.outputs[edge.output];
     const color = output ? getColor(output.type) : "#94a3b8";
@@ -130,6 +134,35 @@ function isVisible(
   if (!parent) return true;
   if (!expandedNodes.has(node.parent)) return false;
   return isVisible(parent, nodesById, expandedNodes);
+}
+
+function findVisibleAncestor(
+  nodeId: string,
+  visibleNodes: Set<string>,
+  nodesById: Map<string, BoxCall>,
+): string | null {
+  if (visibleNodes.has(nodeId)) return nodeId;
+  const node = nodesById.get(nodeId);
+  if (!node?.parent) return null;
+  return findVisibleAncestor(node.parent, visibleNodes, nodesById);
+}
+
+type PromotedEdge = { from: string; output: number; to: string; input: number };
+
+function promoteEdges(
+  edges: { from: string; output: number; to: string; input: number }[],
+  visibleNodes: Set<string>,
+  nodesById: Map<string, BoxCall>,
+): PromotedEdge[] {
+  const result: PromotedEdge[] = [];
+  for (const edge of edges) {
+    const from = findVisibleAncestor(edge.from, visibleNodes, nodesById);
+    const to = findVisibleAncestor(edge.to, visibleNodes, nodesById);
+    if (from && to) {
+      result.push({ from, output: edge.output, to, input: edge.input });
+    }
+  }
+  return result;
 }
 
 function computeLevels(nodes: BoxCall[], edges: { from: string; to: string }[]): Map<string, number> {

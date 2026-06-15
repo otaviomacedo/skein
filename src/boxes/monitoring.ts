@@ -1,5 +1,5 @@
-import { Alarm, AlarmProps, mkAlarm, getAlarmAtt } from "../generated/cloudwatch.js";
-import { Topic, getTopicAtt } from "../generated/sns.js";
+import { Alarm, AlarmProps, mkAlarm } from "../generated/cloudwatch.js";
+import { Topic } from "../generated/sns.js";
 import { updateResource } from "../runtime/registry.js";
 import { box } from "../runtime/box.js";
 
@@ -36,7 +36,7 @@ export const notifyOnAlarm = box(
     const existingActions = alarm.properties.alarmActions as string[] ?? [];
     const properties = {
       ...alarm.properties,
-      alarmActions: [...existingActions, getTopicAtt(topic, "TopicArn")],
+      alarmActions: [...existingActions, topic.topicArn],
     };
     updateResource(alarm.logicalId, alarm.__type, properties);
     return [{ ...alarm, properties } as Alarm, topic];

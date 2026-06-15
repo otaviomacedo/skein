@@ -11,8 +11,9 @@ export function box<TIn extends unknown[], TOut>(
 ): (...args: TIn) => TOut {
   return (...args: TIn): TOut => {
     const inputs: WireRef[] = [];
+    const seen = new Set<string>();
     for (const arg of args) {
-      if (isResource(arg)) inputs.push(toWireRef(arg));
+      collectResources(arg, inputs, seen);
     }
 
     const callId = recordBoxCall(name, inputs, []);
@@ -43,4 +44,24 @@ function isResource(value: unknown): value is Resource {
     "__type" in (value as object) &&
     "logicalId" in (value as object)
   );
+}
+
+function collectResources(value: unknown, out: WireRef[], seen: Set<string>): void {
+  if (value === null || value === undefined) return;
+  if (isResource(value)) {
+    if (!seen.has(value.logicalId)) {
+      seen.add(value.logicalId);
+      out.push(toWireRef(value));
+    }
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectResources(item, out, seen);
+    return;
+  }
+  if (typeof value === "object") {
+    for (const v of Object.values(value as Record<string, unknown>)) {
+      collectResources(v, out, seen);
+    }
+  }
 }

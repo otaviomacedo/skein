@@ -1,5 +1,5 @@
 import { Function } from "../lib/lambda.js";
-import { Queue, getQueueAtt } from "../generated/sqs.js";
+import { Queue } from "../generated/sqs.js";
 import { Policy, mkPolicy, Role } from "../generated/iam.js";
 import { EventSourceMapping, mkEventSourceMapping } from "../generated/lambda.js";
 import { deriveId, ref } from "../runtime/resource.js";
@@ -17,7 +17,7 @@ export const grantSendMessage = box(
         Statement: [{
           Effect: "Allow",
           Action: ["sqs:SendMessage", "sqs:GetQueueUrl"],
-          Resource: [getQueueAtt(queue, "Arn")],
+          Resource: [queue.arn],
         }],
       },
       roles: [ref(role)],
@@ -42,14 +42,14 @@ export const triggerFromQueue = box(
             "sqs:DeleteMessage",
             "sqs:GetQueueAttributes",
           ],
-          Resource: [getQueueAtt(queue, "Arn")],
+          Resource: [queue.arn],
         }],
       },
       roles: [ref(role)],
     });
 
     const mapping = mkEventSourceMapping(deriveId(fn, queue, "Trigger"), {
-      eventSourceArn: getQueueAtt(queue, "Arn"),
+      eventSourceArn: queue.arn,
       functionName: ref(fn),
       batchSize,
       enabled: true,
@@ -65,7 +65,7 @@ export const withDLQ = box(
     const properties = {
       ...queue.properties,
       redrivePolicy: {
-        deadLetterTargetArn: getQueueAtt(dlq, "Arn"),
+        deadLetterTargetArn: dlq.arn,
         maxReceiveCount,
       },
     };

@@ -1,9 +1,8 @@
-import { mkRestApi, getRestApiAtt, mkApiGatewayResource, mkMethod, mkDeployment, mkStage, RestApi } from "../generated/apigateway.js";
+import { mkRestApi, mkApiGatewayResource, mkMethod, mkDeployment, mkStage, RestApi } from "../generated/apigateway.js";
 import { mkPermission } from "../generated/lambda.js";
 import { LambdaFunction } from "../generated/lambda.js";
-import { ref, getAtt, fnJoin, fnSub, deriveId } from "../runtime/resource.js";
+import { ref, fnJoin, fnSub, deriveId } from "../runtime/resource.js";
 import { box } from "../runtime/box.js";
-import { Resource } from "../runtime/resource.js";
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "OPTIONS" | "HEAD" | "ANY";
 
@@ -20,8 +19,8 @@ export type ApiDefinition = {
 };
 
 export type Api = {
-  restApi: RestApi;
-  stageUrl: string;
+  readonly restApi: RestApi;
+  readonly stageUrl: string;
 };
 
 export const mkApi = box(
@@ -31,31 +30,39 @@ export const mkApi = box(
 
     const restApi = mkRestApi(logicalId, { name, description });
 
-    const rootResourceId = getRestApiAtt(restApi, "RootResourceId");
+    const rootResourceId = restApi.rootResourceId;
 
     const lambdaUri = (handler: LambdaFunction) =>
       fnJoin("", [
         "arn:aws:apigateway:",
         fnSub("${AWS::Region}"),
         ":lambda:path/2015-03-31/functions/",
-        getAtt(handler, "Arn"),
+        handler.arn,
         "/invocations",
       ]);
 
     const permissionsCreated = new Set<string>();
+    const pathResources = new Map<string, string>();
 
     for (const [path, route] of Object.entries(routes)) {
       const pathParts = path.replace(/^\//, "").split("/");
       let parentId: string = rootResourceId;
+      let pathPrefix = "";
 
       for (const part of pathParts) {
-        const resourceId = deriveId(restApi, part, "Resource");
-        const resource = mkApiGatewayResource(resourceId, {
-          parentId,
-          pathPart: part,
-          restApiId: ref(restApi),
-        } as any);
-        parentId = ref(resource);
+        pathPrefix = pathPrefix ? `${pathPrefix}/${part}` : part;
+        if (pathResources.has(pathPrefix)) {
+          parentId = pathResources.get(pathPrefix)!;
+        } else {
+          const resourceId = deriveId(restApi, pathPrefix.replace(/[^a-zA-Z0-9]/g, ""), "Resource");
+          const resource = mkApiGatewayResource(resourceId, {
+            parentId,
+            pathPart: part,
+            restApiId: ref(restApi),
+          } as any);
+          parentId = ref(resource);
+          pathResources.set(pathPrefix, parentId);
+        }
       }
 
       for (const method of route.methods) {

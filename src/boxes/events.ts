@@ -1,9 +1,8 @@
 import { Function } from "../lib/lambda.js";
-import { Rule, mkRule, getRuleAtt } from "../generated/events.js";
+import { Rule, mkRule } from "../generated/events.js";
 import { Permission, mkPermission } from "../generated/lambda.js";
-import { ref, deriveId, getAtt } from "../runtime/resource.js";
+import { ref, deriveId } from "../runtime/resource.js";
 import { box } from "../runtime/box.js";
-import { getLambdaFunctionAtt } from "../generated/lambda.js";
 
 export const onSchedule = box(
   "onSchedule",
@@ -13,7 +12,7 @@ export const onSchedule = box(
       state: "ENABLED",
       targets: [{
         id: fn.logicalId,
-        arn: getLambdaFunctionAtt(fn, "Arn"),
+        arn: fn.arn,
       }],
     });
 
@@ -21,7 +20,7 @@ export const onSchedule = box(
       functionName: ref(fn),
       action: "lambda:InvokeFunction",
       principal: "events.amazonaws.com",
-      sourceArn: getRuleAtt(rule, "Arn"),
+      sourceArn: rule.arn,
     });
 
     return [fn, rule];
@@ -36,7 +35,7 @@ export const onEvent = box(
       state: "ENABLED",
       targets: [{
         id: fn.logicalId,
-        arn: getLambdaFunctionAtt(fn, "Arn"),
+        arn: fn.arn,
       }],
     });
 
@@ -44,7 +43,7 @@ export const onEvent = box(
       functionName: ref(fn),
       action: "lambda:InvokeFunction",
       principal: "events.amazonaws.com",
-      sourceArn: getRuleAtt(rule, "Arn"),
+      sourceArn: rule.arn,
     });
 
     return [fn, rule];
