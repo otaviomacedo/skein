@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { writeSingleTemplate, writeAssembly, readAssemblyManifest, readTemplate, AssemblyConfig } from "./assembly.js";
 import { diffTemplates, formatDiff } from "./diff.js";
+import { deploy } from "./deploy.js";
 import { synth, synthMulti } from "../runtime/synth.js";
 import { getAssetManifest } from "../runtime/assets.js";
 import { getStackAssignments } from "../runtime/stacks.js";
@@ -19,33 +20,54 @@ function usage() {
 skein - IaC framework based on monoidal composition
 
 Usage:
-  skein synth [--entry <file>] [--out <dir>]
-  skein diff  [--entry <file>] [--out <dir>]
+  skein synth  [--entry <file>] [--out <dir>]
+  skein diff   [--entry <file>] [--out <dir>]
+  skein deploy [--entry <file>] [--out <dir>] [--qualifier <q>] [--region <r>]
 
 Commands:
   synth   Run the app and produce a cloud assembly
   diff    Synth and show what changed vs. the last assembly
+  deploy  Synth, build assets, upload, and deploy stacks via CloudFormation
 
 Options:
-  --entry <file>   Entrypoint file (default: ${DEFAULT_ENTRY})
-  --out <dir>      Output directory (default: ${DEFAULT_OUT_DIR})
+  --entry <file>        Entrypoint file (default: ${DEFAULT_ENTRY})
+  --out <dir>           Output directory (default: ${DEFAULT_OUT_DIR})
+  --qualifier <qual>    CDK bootstrap qualifier (default: hnb659fds)
+  --region <region>     AWS region
+
+Deploy uses the CDK bootstrap stack resources (S3 bucket, ECR repo, IAM roles)
+identified by the qualifier. Run 'cdk bootstrap' first if not already done.
 `);
 }
 
-function parseArgs(args: string[]): { command: string; entry: string; outDir: string } {
+type ParsedArgs = {
+  command: string;
+  entry: string;
+  outDir: string;
+  qualifier?: string;
+  region?: string;
+};
+
+function parseArgs(args: string[]): ParsedArgs {
   const command = args[0] ?? "";
   let entry = DEFAULT_ENTRY;
   let outDir = DEFAULT_OUT_DIR;
+  let qualifier: string | undefined;
+  let region: string | undefined;
 
   for (let i = 1; i < args.length; i++) {
     if (args[i] === "--entry" && args[i + 1]) {
       entry = args[++i];
     } else if (args[i] === "--out" && args[i + 1]) {
       outDir = args[++i];
+    } else if (args[i] === "--qualifier" && args[i + 1]) {
+      qualifier = args[++i];
+    } else if (args[i] === "--region" && args[i + 1]) {
+      region = args[++i];
     }
   }
 
-  return { command, entry: resolve(entry), outDir: resolve(outDir) };
+  return { command, entry: resolve(entry), outDir: resolve(outDir), qualifier, region };
 }
 
 async function loadApp(entryPath: string): Promise<void> {
@@ -130,6 +152,13 @@ async function commandDiff(entry: string, outDir: string) {
   }
 }
 
+async function commandDeploy(entry: string, outDir: string, qualifier?: string, region?: string) {
+  await loadApp(entry);
+  writeCloudAssembly(outDir);
+
+  await deploy({ outDir, qualifier, region });
+}
+
 async function main() {
   const args = process.argv.slice(2);
 
@@ -138,7 +167,7 @@ async function main() {
     process.exit(0);
   }
 
-  const { command, entry, outDir } = parseArgs(args);
+  const { command, entry, outDir, qualifier, region } = parseArgs(args);
 
   switch (command) {
     case "synth":
@@ -146,6 +175,9 @@ async function main() {
       break;
     case "diff":
       await commandDiff(entry, outDir);
+      break;
+    case "deploy":
+      await commandDeploy(entry, outDir, qualifier, region);
       break;
     default:
       console.error(`Unknown command: ${command}`);

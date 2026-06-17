@@ -215,6 +215,23 @@ function transition(nextState: string | undefined, isLast: boolean): Record<stri
   return isLast ? { End: true } : { Next: nextState };
 }
 
+function toAslRetry(retries: Retry[]): unknown[] {
+  return retries.map(r => ({
+    ErrorEquals: r.errorEquals,
+    ...(r.intervalSeconds !== undefined && { IntervalSeconds: r.intervalSeconds }),
+    ...(r.maxAttempts !== undefined && { MaxAttempts: r.maxAttempts }),
+    ...(r.backoffRate !== undefined && { BackoffRate: r.backoffRate }),
+  }));
+}
+
+function toAslCatch(catches: Catch[]): unknown[] {
+  return catches.map(c => ({
+    ErrorEquals: c.errorEquals,
+    Next: c.next,
+    ...(c.resultPath !== undefined && { ResultPath: c.resultPath }),
+  }));
+}
+
 function buildLambdaState(step: LambdaStep, nextState: string | undefined, isLast: boolean): Record<string, unknown> {
   const state: Record<string, unknown> = {
     Type: "Task",
@@ -228,8 +245,8 @@ function buildLambdaState(step: LambdaStep, nextState: string | undefined, isLas
     ...transition(nextState, isLast),
   };
 
-  if (step.retry) state.Retry = step.retry;
-  if (step.catch) state.Catch = step.catch;
+  if (step.retry) state.Retry = toAslRetry(step.retry);
+  if (step.catch) state.Catch = toAslCatch(step.catch);
 
   return state;
 }
@@ -258,8 +275,8 @@ function buildParallelState(step: ParallelStep, nextState: string | undefined, i
   };
 
   if (step.resultPath) state.ResultPath = step.resultPath;
-  if (step.retry) state.Retry = step.retry;
-  if (step.catch) state.Catch = step.catch;
+  if (step.retry) state.Retry = toAslRetry(step.retry);
+  if (step.catch) state.Catch = toAslCatch(step.catch);
 
   return state;
 }
@@ -276,8 +293,8 @@ function buildMapState(step: MapStep, nextState: string | undefined, isLast: boo
 
   if (step.maxConcurrency !== undefined) state.MaxConcurrency = step.maxConcurrency;
   if (step.resultPath) state.ResultPath = step.resultPath;
-  if (step.retry) state.Retry = step.retry;
-  if (step.catch) state.Catch = step.catch;
+  if (step.retry) state.Retry = toAslRetry(step.retry);
+  if (step.catch) state.Catch = toAslCatch(step.catch);
 
   return state;
 }

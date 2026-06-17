@@ -35,6 +35,19 @@ export function extractLogicalId(value: string): string | undefined {
   return undefined;
 }
 
+export function extractAllLogicalIds(value: string): string[] {
+  const regex = new RegExp(TOKEN_REGEX.source, "g");
+  const ids: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(value)) !== null) {
+    const resolvable = tokenRegistry.get(match[1]);
+    if (resolvable && (resolvable.kind === "ref" || resolvable.kind === "getAtt")) {
+      ids.push(resolvable.logicalId);
+    }
+  }
+  return ids;
+}
+
 export function isResource(value: unknown): boolean {
   return (
     value !== null &&

@@ -8,6 +8,7 @@ const patches: Patch[] = [];
 const discarded = new Set<string>();
 const resourceConditions = new Map<string, string>();
 const resourceMetadata = new Map<string, Record<string, unknown>>();
+const explicitDeps = new Map<string, Set<string>>();
 
 export function registerResource(
   logicalId: string,
@@ -53,9 +54,19 @@ export function getResourceMetadata(): Map<string, Record<string, unknown>> {
   return resourceMetadata;
 }
 
+export function addDependency(from: string, to: string): void {
+  if (!explicitDeps.has(from)) explicitDeps.set(from, new Set());
+  explicitDeps.get(from)!.add(to);
+}
+
+export function getExplicitDeps(): Map<string, Set<string>> {
+  return explicitDeps;
+}
+
 export function resetRegistry(): void {
   patches.length = 0;
   discarded.clear();
   resourceConditions.clear();
   resourceMetadata.clear();
+  explicitDeps.clear();
 }

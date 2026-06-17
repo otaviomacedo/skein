@@ -1,4 +1,4 @@
-import { getPatches, getDiscarded, getResourceConditions, getResourceMetadata } from "./registry.js";
+import { getPatches, getDiscarded, getResourceConditions, getResourceMetadata, getExplicitDeps } from "./registry.js";
 import { mergePatchesByLogicalId, MergedResource } from "./merge.js";
 import { resolveValue } from "./tokens.js";
 import { getConditions } from "./conditions.js";
@@ -37,10 +37,16 @@ export function synth(): Template {
 
   const resolved = live.map((r) => ({
     ...r,
-    properties: resolveValue(r.properties) as Record<string, unknown>,
+    properties: toPascalCaseKeys(resolveValue(r.properties) as Record<string, unknown>),
   }));
 
   const deps = computeDependencies(resolved);
+  const explicit = getExplicitDeps();
+  for (const [from, tos] of explicit) {
+    const existing = deps.get(from) ?? [];
+    const merged = new Set([...existing, ...tos]);
+    deps.set(from, [...merged].sort());
+  }
 
   validate(resolved, deps);
 
@@ -268,7 +274,7 @@ export function synthMulti(defaultStack: string = "default"): SynthOutput {
 
   const resolved = live.map((r) => ({
     ...r,
-    properties: resolveValue(r.properties) as Record<string, unknown>,
+    properties: toPascalCaseKeys(resolveValue(r.properties) as Record<string, unknown>),
   }));
 
   // Determine stack for each resource
@@ -369,4 +375,47 @@ export function synthMulti(defaultStack: string = "default"): SynthOutput {
   }
 
   return { templates, stackDependencies };
+}
+
+const CAMEL_CASE_PROP = /^[a-z][a-zA-Z0-9]*$/;
+
+const OPAQUE_JSON_KEYS = new Set([
+  "policyDocument",
+  "redrivePolicy",
+  "redriveAllowPolicy",
+  "resourcePolicy",
+  "assumeRolePolicyDocument",
+  "eventPattern",
+  "routeSelectionExpression",
+]);
+
+function toPascalCase(key: string): string {
+  if (!CAMEL_CASE_PROP.test(key)) return key;
+  return key[0].toUpperCase() + key.slice(1);
+}
+
+function toPascalCaseKeys(obj: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (OPAQUE_JSON_KEYS.has(key)) {
+      result[toPascalCase(key)] = value;
+    } else {
+      result[toPascalCase(key)] = toPascalCaseValue(value);
+    }
+  }
+  return result;
+}
+
+function toPascalCaseValue(value: unknown): unknown {
+  if (value === null || value === undefined) return value;
+  if (Array.isArray(value)) return value.map(toPascalCaseValue);
+  if (typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    const keys = Object.keys(obj);
+    if (keys.some(k => k === "Ref" || k.startsWith("Fn::"))) {
+      return value;
+    }
+    return toPascalCaseKeys(obj);
+  }
+  return value;
 }

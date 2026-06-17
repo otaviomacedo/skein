@@ -56,8 +56,8 @@ describe("testing utilities", () => {
         mkBucket("B", { bucketName: "hello" });
         encrypt(mkBucket("B2", { bucketName: "world" }));
       });
-      expect(hasResource(t, "B", { properties: { bucketName: "hello" } })).toBe(true);
-      expect(hasResource(t, "B", { properties: { bucketName: "wrong" } })).toBe(false);
+      expect(hasResource(t, "B", { properties: { BucketName: "hello" } })).toBe(true);
+      expect(hasResource(t, "B", { properties: { BucketName: "wrong" } })).toBe(false);
       expect(hasResource(t, "B2", {
         properties: { bucketEncryption: expect.anything() as unknown as Record<string, unknown> },
       })).toBe(false); // containsSubset doesn't use expect matchers

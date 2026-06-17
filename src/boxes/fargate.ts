@@ -4,6 +4,7 @@ import { SecurityGroup, mkSecurityGroup, Subnet, VPC } from "../generated/ec2.js
 import { LogGroup, mkLogGroup } from "../generated/logs.js";
 import { Role, mkRole } from "../generated/iam.js";
 import { ref } from "../runtime/resource.js";
+import { addDependency } from "../runtime/registry.js";
 import { box } from "../runtime/box.js";
 
 // === Mid-level boxes ===
@@ -57,7 +58,7 @@ export const taskRole = box(
  */
 export const albWithListener = box(
   "albWithListener",
-  (logicalId: string, vpcResource: VPC, subnets: Subnet[], port: number): { readonly alb: LoadBalancer; readonly targetGroup: TargetGroup; readonly listener: Listener; readonly securityGroup: SecurityGroup } => {
+  (logicalId: string, vpcResource: VPC, subnets: readonly Subnet[], port: number): { readonly alb: LoadBalancer; readonly targetGroup: TargetGroup; readonly listener: Listener; readonly securityGroup: SecurityGroup } => {
     const sg = mkSecurityGroup(`${logicalId}ALBSG`, {
       groupDescription: `ALB security group for ${logicalId}`,
       vpcId: vpcResource,
@@ -110,8 +111,8 @@ export type ContainerProps = {
 
 export type FargateServiceProps = {
   vpc: VPC;
-  subnets: Subnet[];
-  albSubnets: Subnet[];
+  subnets: readonly Subnet[];
+  albSubnets: readonly Subnet[];
   container: ContainerProps;
   desiredCount?: number;
   cpu?: string;
@@ -212,7 +213,8 @@ export const fargateService = box(
       }],
     });
 
-    const service = mkService(`${logicalId}Service`, {
+    const serviceId = `${logicalId}Service`;
+    const service = mkService(serviceId, {
       cluster: cluster.arn,
       taskDefinition: taskDef,
       desiredCount,
@@ -230,6 +232,9 @@ export const fargateService = box(
         targetGroupArn: targetGroup.targetGroupArn,
       }],
     });
+
+    // Service must wait for the Listener to attach the TG to the ALB
+    addDependency(serviceId, listener.logicalId);
 
     return {
       cluster,

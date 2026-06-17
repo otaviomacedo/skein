@@ -54,9 +54,9 @@ describe("assets", () => {
 
     // Asset tokens resolve to Refs (deploy tool substitutes later)
     const fnProps = template.Resources.Fn.Properties as Record<string, unknown>;
-    const code = fnProps.code as Record<string, unknown>;
-    expect(code.s3Bucket).toEqual({ Ref: "__asset_bucket__Code" });
-    expect(code.s3Key).toEqual({ Ref: "__asset_key__Code" });
+    const code = fnProps.Code as Record<string, unknown>;
+    expect(code.S3Bucket).toEqual({ Ref: "__asset_bucket__Code" });
+    expect(code.S3Key).toEqual({ Ref: "__asset_key__Code" });
 
     // Manifest has the asset
     const manifest = getAssetManifest();

@@ -7,3 +7,8 @@ studio/dist/
 .idea/
 src/generated/
 codegen/cfn-spec.json
+/categorical-semantics.aux
+/categorical-semantics.log
+/categorical-semantics.out
+/categorical-semantics.pdf
+/out/

@@ -37,7 +37,7 @@ describe("snsFanout", () => {
     expect(permissions.length).toBe(3);
 
     for (const sub of subscriptions) {
-      expect((sub.Properties as any).protocol).toBe("lambda");
+      expect((sub.Properties as any).Protocol).toBe("lambda");
     }
   });
 

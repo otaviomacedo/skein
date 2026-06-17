@@ -22,7 +22,7 @@ describe("synth", () => {
     expect(template.AWSTemplateFormatVersion).toBe("2010-09-09");
     expect(template.Resources.MyBucket).toEqual({
       Type: "AWS::S3::Bucket",
-      Properties: { bucketName: "my-bucket" },
+      Properties: { BucketName: "my-bucket" },
     });
   });
 
@@ -36,7 +36,7 @@ describe("synth", () => {
     const template = synth();
 
     expect(template.Resources.MyPolicy.Properties).toMatchObject({
-      roles: [{ Ref: "MyBucket" }],
+      Roles: [{ Ref: "MyBucket" }],
     });
   });
 
@@ -53,7 +53,7 @@ describe("synth", () => {
     const template = synth();
 
     expect(template.Resources.MyFunc.Properties).toMatchObject({
-      role: { "Fn::GetAtt": ["MyRole", "Arn"] },
+      Role: { "Fn::GetAtt": ["MyRole", "Arn"] },
     });
   });
 
@@ -125,7 +125,7 @@ describe("synth", () => {
     const template = synth();
 
     const resource = (template.Resources.MyPolicy.Properties as Record<string, unknown>)
-      .policyDocument as Record<string, unknown>;
+      .PolicyDocument as Record<string, unknown>;
     const statement = (resource.Statement as unknown[])[0] as Record<string, unknown>;
     expect(statement.Resource).toEqual({
       "Fn::Join": ["", [{ "Fn::GetAtt": ["MyBucket", "Arn"] }, "/*"]],
@@ -150,10 +150,10 @@ describe("synth", () => {
     const template = synth();
 
     expect(template.Resources.MyBucket.Properties).toMatchObject({
-      bucketName: "original",
-      bucketEncryption: {
-        serverSideEncryptionConfiguration: [{
-          serverSideEncryptionByDefault: { sseAlgorithm: "AES256" },
+      BucketName: "original",
+      BucketEncryption: {
+        ServerSideEncryptionConfiguration: [{
+          ServerSideEncryptionByDefault: { SseAlgorithm: "AES256" },
         }],
       },
     });

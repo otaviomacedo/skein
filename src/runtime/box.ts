@@ -1,5 +1,6 @@
 import { Resource } from "./resource.js";
-import { recordBoxCall, pushBoxContext, popBoxContext, updateBoxOutputs, WireRef } from "./graph.js";
+import { recordBoxCall, pushBoxContext, popBoxContext, updateBoxOutputs, WireRef, getKnownResourceType } from "./graph.js";
+import { extractAllLogicalIds, isToken } from "./tokens.js";
 
 function toWireRef(resource: Resource): WireRef {
   return { resourceId: resource.logicalId, type: resource.__type };
@@ -24,13 +25,8 @@ export function box<TIn extends unknown[], TOut>(
     popBoxContext();
 
     const outputs: WireRef[] = [];
-    if (isResource(result)) {
-      outputs.push(toWireRef(result));
-    } else if (Array.isArray(result)) {
-      for (const item of result) {
-        if (isResource(item)) outputs.push(toWireRef(item));
-      }
-    }
+    const outputSeen = new Set<string>();
+    collectResources(result, outputs, outputSeen);
     updateBoxOutputs(callId, outputs);
 
     return result;
@@ -52,6 +48,20 @@ function collectResources(value: unknown, out: WireRef[], seen: Set<string>): vo
     if (!seen.has(value.logicalId)) {
       seen.add(value.logicalId);
       out.push(toWireRef(value));
+    }
+    return;
+  }
+  if (typeof value === "string") {
+    if (isToken(value)) {
+      for (const logicalId of extractAllLogicalIds(value)) {
+        if (!seen.has(logicalId)) {
+          const type = getKnownResourceType(logicalId);
+          if (type) {
+            seen.add(logicalId);
+            out.push({ resourceId: logicalId, type });
+          }
+        }
+      }
     }
     return;
   }

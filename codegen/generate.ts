@@ -426,6 +426,104 @@ function generateIndex(services: Map<string, string[]>): string {
   return lines.join("\n");
 }
 
+function generateMinimalProps(
+  cfnType: string,
+  spec: CfnSpec,
+  typedRefs: TypedRef[],
+): string {
+  const resourceSpec = spec.ResourceTypes[cfnType];
+  const props = resourceSpec?.Properties ?? {};
+  const refPropNames = new Set(typedRefs.map(tr => tr.propName));
+
+  const entries: string[] = [];
+  for (const [propName, propDef] of Object.entries(props)) {
+    if (!propDef.Required) continue;
+    // Skip typed refs — those require actual resources to be passed in,
+    // which would create circular fixture dependencies
+    if (refPropNames.has(propName)) continue;
+
+    const camel = toCamelCase(propName);
+    const value = placeholderValue(propDef, cfnType, spec);
+    entries.push(`${camel}: ${value}`);
+  }
+
+  return `{ ${entries.join(", ")} }`;
+}
+
+function placeholderValue(prop: PropertyDef, resourcePrefix: string, spec: CfnSpec): string {
+  if (prop.PrimitiveType === "String") return `"placeholder"`;
+  if (prop.PrimitiveType === "Integer" || prop.PrimitiveType === "Long" || prop.PrimitiveType === "Double") return "1";
+  if (prop.PrimitiveType === "Boolean") return "true";
+
+  if (prop.Type === "List") {
+    if (prop.PrimitiveItemType === "String") return `["placeholder"]`;
+    if (prop.PrimitiveItemType === "Integer") return `[1]`;
+    if (prop.ItemType) {
+      const fullType = `${resourcePrefix}.${prop.ItemType}`;
+      const subSpec = spec.PropertyTypes[fullType];
+      if (subSpec?.Properties) {
+        const subEntries: string[] = [];
+        for (const [subName, subDef] of Object.entries(subSpec.Properties)) {
+          if (!subDef.Required) continue;
+          subEntries.push(`${toCamelCase(subName)}: ${placeholderValue(subDef, resourcePrefix, spec)}`);
+        }
+        return `[{ ${subEntries.join(", ")} }]`;
+      }
+      return `[{}]`;
+    }
+    return `[]`;
+  }
+
+  if (prop.Type === "Map") return "{}";
+  if (prop.Type === "Tag") return `{ key: "k", value: "v" }`;
+
+  if (prop.Type) {
+    const fullType = `${resourcePrefix}.${prop.Type}`;
+    const subSpec = spec.PropertyTypes[fullType];
+    if (subSpec?.Properties) {
+      const subEntries: string[] = [];
+      for (const [subName, subDef] of Object.entries(subSpec.Properties)) {
+        if (!subDef.Required) continue;
+        subEntries.push(`${toCamelCase(subName)}: ${placeholderValue(subDef, resourcePrefix, spec)}`);
+      }
+      return `{ ${subEntries.join(", ")} }`;
+    }
+    return "{}";
+  }
+
+  return `"placeholder"`;
+}
+
+function generateFixtures(
+  serviceMap: Map<string, [string, ResourceSpec, TypedRef[]][]>,
+  spec: CfnSpec,
+): string {
+  const lines: string[] = [];
+
+  for (const [service] of serviceMap) {
+    lines.push(`import * as ${service} from "./${service}.js";`);
+  }
+
+  lines.push("");
+  lines.push("export type FixtureEntry = {");
+  lines.push("  factory: (id: string, props: any) => any;");
+  lines.push("  minimalProps: Record<string, unknown>;");
+  lines.push("};");
+  lines.push("");
+  lines.push("export const fixtures: Record<string, FixtureEntry> = {");
+
+  for (const [service, resources] of serviceMap) {
+    for (const [cfnType, , typedRefs] of resources) {
+      const name = toResourceName(cfnType);
+      const minProps = generateMinimalProps(cfnType, spec, typedRefs);
+      lines.push(`  "${cfnType}": { factory: ${service}.mk${name}, minimalProps: ${minProps} },`);
+    }
+  }
+
+  lines.push("};");
+  return lines.join("\n");
+}
+
 // --- Main ---
 
 function main() {
@@ -475,6 +573,10 @@ function main() {
   // Generate index
   const indexContent = `export { Tag } from "./common.js";\n` + generateIndex(serviceExports);
   writeFileSync(join(outputDir, "index.ts"), indexContent);
+
+  // Generate fixtures registry
+  const fixturesContent = generateFixtures(serviceMap, spec);
+  writeFileSync(join(outputDir, "fixtures.ts"), fixturesContent);
 
   console.log(`Done.`);
 }

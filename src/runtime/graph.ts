@@ -30,6 +30,15 @@ const callsById = new Map<string, BoxCall>();
 const edges: GraphEdge[] = [];
 const latestProducer = new Map<string, { callId: string; outputIndex: number }>();
 const callStack: string[] = [];
+const knownResources = new Map<string, string>();
+
+export function registerKnownResource(logicalId: string, type: string): void {
+  knownResources.set(logicalId, type);
+}
+
+export function getKnownResourceType(logicalId: string): string | undefined {
+  return knownResources.get(logicalId);
+}
 
 export function recordBoxCall(
   box: string,
@@ -62,6 +71,7 @@ export function recordBoxCall(
   // Update latest producer for each output
   for (let i = 0; i < outputs.length; i++) {
     latestProducer.set(outputs[i].resourceId, { callId: id, outputIndex: i });
+    knownResources.set(outputs[i].resourceId, outputs[i].type);
   }
 
   return id;
@@ -115,4 +125,5 @@ export function resetGraph(): void {
   latestProducer.clear();
   callStack.length = 0;
   producerSnapshots.length = 0;
+  knownResources.clear();
 }

@@ -92,29 +92,29 @@ describe("static site: full composition", () => {
 
     // Content bucket has all transformations merged
     const cbProps = template.Resources.ContentBucket.Properties as Record<string, unknown>;
-    expect(cbProps.versioningConfiguration).toEqual({ status: "Enabled" });
-    expect(cbProps.bucketEncryption).toBeDefined();
-    expect(cbProps.publicAccessBlockConfiguration).toBeDefined();
-    expect(cbProps.websiteConfiguration).toEqual({ indexDocument: "index.html", errorDocument: "error.html" });
+    expect(cbProps.VersioningConfiguration).toEqual({ Status: "Enabled" });
+    expect(cbProps.BucketEncryption).toBeDefined();
+    expect(cbProps.PublicAccessBlockConfiguration).toBeDefined();
+    expect(cbProps.WebsiteConfiguration).toEqual({ IndexDocument: "index.html", ErrorDocument: "error.html" });
 
     // Log bucket has ownership controls
     const lbProps = template.Resources.LogBucket.Properties as Record<string, unknown>;
-    expect(lbProps.ownershipControls).toBeDefined();
+    expect(lbProps.OwnershipControls).toBeDefined();
 
     // Distribution config has origin, logging, cert
     const distProps = template.Resources.CDN.Properties as Record<string, unknown>;
-    const distConfig = distProps.distributionConfig as Record<string, unknown>;
-    expect(distConfig.origins).toBeDefined();
-    expect(distConfig.logging).toBeDefined();
-    expect(distConfig.viewerCertificate).toBeDefined();
+    const distConfig = distProps.DistributionConfig as Record<string, unknown>;
+    expect(distConfig.Origins).toBeDefined();
+    expect(distConfig.Logging).toBeDefined();
+    expect(distConfig.ViewerCertificate).toBeDefined();
 
     // Function has environment variable with bucket reference
     const fnProps = template.Resources.DeployFn.Properties as Record<string, unknown>;
-    const env = (fnProps.environment as Record<string, unknown>).variables as Record<string, unknown>;
+    const env = (fnProps.Environment as Record<string, unknown>).Variables as Record<string, unknown>;
     expect(env.BUCKET_NAME).toEqual({ "Fn::GetAtt": ["ContentBucket", "DomainName"] });
 
     // Function references role
-    expect(fnProps.role).toEqual({ "Fn::GetAtt": ["DeployRole", "Arn"] });
+    expect(fnProps.Role).toEqual({ "Fn::GetAtt": ["DeployRole", "Arn"] });
 
     // Alias record exists with derived ID
     expect(template.Resources["CDNAliasRecord"]).toBeDefined();

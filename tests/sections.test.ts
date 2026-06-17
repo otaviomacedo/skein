@@ -48,7 +48,7 @@ describe("conditions", () => {
 
     const template = synth();
     const props = template.Resources.Bucket.Properties as Record<string, unknown>;
-    expect(props.bucketName).toEqual({ "Fn::If": ["IsProd", "ERROR", "DEBUG"] });
+    expect(props.BucketName).toEqual({ "Fn::If": ["IsProd", "ERROR", "DEBUG"] });
   });
 
   it("supports condition combinators", () => {
@@ -97,7 +97,7 @@ describe("mappings", () => {
 
     const template = synth();
     const props = template.Resources.Bucket.Properties as Record<string, unknown>;
-    expect(props.bucketName).toEqual({
+    expect(props.BucketName).toEqual({
       "Fn::FindInMap": ["RegionAMI", { Ref: "AWS::Region" }, "HVM64"],
     });
   });
@@ -132,7 +132,7 @@ describe("parameters", () => {
 
     const template = synth();
     const props = template.Resources.Bucket.Properties as Record<string, unknown>;
-    expect(props.bucketName).toEqual({ Ref: "Env" });
+    expect(props.BucketName).toEqual({ Ref: "Env" });
   });
 
   it("pseudoParam resolves to Ref with pseudo-parameter name", () => {
@@ -141,7 +141,7 @@ describe("parameters", () => {
 
     const template = synth();
     const props = template.Resources.Bucket.Properties as Record<string, unknown>;
-    expect(props.bucketName).toEqual({ Ref: "AWS::Region" });
+    expect(props.BucketName).toEqual({ Ref: "AWS::Region" });
   });
 });
 

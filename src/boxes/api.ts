@@ -1,7 +1,8 @@
-import { mkRestApi, mkApiGatewayResource, mkMethod, mkDeployment, mkStage, RestApi } from "../generated/apigateway.js";
+import { mkRestApi, mkApiGatewayResource, mkMethod, mkDeployment, mkStage, RestApi, ApiGatewayResource } from "../generated/apigateway.js";
 import { mkPermission } from "../generated/lambda.js";
 import { LambdaFunction } from "../generated/lambda.js";
-import { ref, fnJoin, fnSub, deriveId } from "../runtime/resource.js";
+import { ref, fnJoin, fnSub, deriveId, makeResource } from "../runtime/resource.js";
+import { addDependency } from "../runtime/registry.js";
 import { box } from "../runtime/box.js";
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "OPTIONS" | "HEAD" | "ANY";
@@ -42,35 +43,46 @@ export const mkApi = box(
       ]);
 
     const permissionsCreated = new Set<string>();
-    const pathResources = new Map<string, string>();
+    const pathResources = new Map<string, ApiGatewayResource>();
+    const methodIds: string[] = [];
 
     for (const [path, route] of Object.entries(routes)) {
       const pathParts = path.replace(/^\//, "").split("/");
-      let parentId: string = rootResourceId;
+      let parentResource: ApiGatewayResource | null = null;
       let pathPrefix = "";
 
       for (const part of pathParts) {
         pathPrefix = pathPrefix ? `${pathPrefix}/${part}` : part;
         if (pathResources.has(pathPrefix)) {
-          parentId = pathResources.get(pathPrefix)!;
+          parentResource = pathResources.get(pathPrefix)!;
         } else {
-          const resourceId = deriveId(restApi, pathPrefix.replace(/[^a-zA-Z0-9]/g, ""), "Resource");
-          const resource = mkApiGatewayResource(resourceId, {
-            parentId,
-            pathPart: part,
-            restApiId: ref(restApi),
-          } as any);
-          parentId = ref(resource);
-          pathResources.set(pathPrefix, parentId);
+          const resourceLogicalId = deriveId(restApi, pathPrefix.replace(/[^a-zA-Z0-9]/g, ""), "Resource");
+          let resource: ApiGatewayResource;
+          if (parentResource) {
+            resource = mkApiGatewayResource(resourceLogicalId, {
+              parentId: parentResource,
+              pathPart: part,
+              restApiId: restApi,
+            });
+          } else {
+            // Root level: parentId is the RestApi's RootResourceId (a token string, not a resource)
+            resource = makeResource("AWS::ApiGateway::Resource", resourceLogicalId, {
+              parentId: rootResourceId,
+              pathPart: part,
+              restApiId: ref(restApi),
+            }) as unknown as ApiGatewayResource;
+          }
+          parentResource = resource;
+          pathResources.set(pathPrefix, resource);
         }
       }
 
       for (const method of route.methods) {
-        const methodId = deriveId(restApi, pathParts.join(""), method);
+        const methodId = deriveId(restApi, pathParts.join("").replace(/[^a-zA-Z0-9]/g, ""), method);
         mkMethod(methodId, {
           httpMethod: method,
-          resourceId: parentId,
-          restApiId: ref(restApi),
+          resourceId: parentResource,
+          restApiId: restApi,
           authorizationType: "NONE",
           integration: {
             type: "AWS_PROXY",
@@ -78,6 +90,7 @@ export const mkApi = box(
             uri: lambdaUri(route.handler),
           },
         } as any);
+        methodIds.push(methodId);
       }
 
       const handlerId = route.handler.logicalId;
@@ -100,13 +113,18 @@ export const mkApi = box(
       }
     }
 
-    const deployment = mkDeployment(deriveId(restApi, "Deployment"), {
-      restApiId: ref(restApi),
+    const deploymentId = deriveId(restApi, "Deployment");
+    const deployment = mkDeployment(deploymentId, {
+      restApiId: restApi,
     } as any);
+
+    for (const mId of methodIds) {
+      addDependency(deploymentId, mId);
+    }
 
     mkStage(deriveId(restApi, "Stage"), {
       restApiId: ref(restApi),
-      deploymentId: ref(deployment),
+      deploymentId: deployment,
       stageName,
     } as any);
 

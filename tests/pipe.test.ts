@@ -27,10 +27,10 @@ describe("pipe", () => {
     });
 
     const props = template.Resources.B.Properties as Record<string, unknown>;
-    expect(props.versioningConfiguration).toEqual({ status: "Enabled" });
-    expect(props.bucketEncryption).toBeDefined();
-    expect(props.websiteConfiguration).toBeDefined();
-    expect(props.publicAccessBlockConfiguration).toBeDefined();
+    expect(props.VersioningConfiguration).toEqual({ Status: "Enabled" });
+    expect(props.BucketEncryption).toBeDefined();
+    expect(props.WebsiteConfiguration).toBeDefined();
+    expect(props.PublicAccessBlockConfiguration).toBeDefined();
   });
 
   it("chains multi-output boxes (threads first element)", () => {
@@ -51,10 +51,10 @@ describe("pipe", () => {
     });
 
     const distProps = template.Resources.CDN.Properties as Record<string, unknown>;
-    const config = distProps.distributionConfig as Record<string, unknown>;
-    expect(config.origins).toBeDefined();
-    expect(config.logging).toBeDefined();
-    expect(config.viewerCertificate).toBeDefined();
+    const config = distProps.DistributionConfig as Record<string, unknown>;
+    expect(config.Origins).toBeDefined();
+    expect(config.Logging).toBeDefined();
+    expect(config.ViewerCertificate).toBeDefined();
   });
 
   it("chains environment variable additions", () => {
@@ -76,7 +76,7 @@ describe("pipe", () => {
     });
 
     const fnProps = template.Resources.Fn.Properties as Record<string, unknown>;
-    const env = (fnProps.environment as Record<string, unknown>).variables as Record<string, unknown>;
+    const env = (fnProps.Environment as Record<string, unknown>).Variables as Record<string, unknown>;
     expect(env.KEY1).toBe("value1");
     expect(env.KEY2).toBe("value2");
     expect(env.BUCKET).toEqual({ Ref: "B" });
@@ -113,7 +113,7 @@ describe("pipe", () => {
 
     expect(template.Resources["RBReadPolicy"]).toBeDefined();
     const fnProps = template.Resources.Fn.Properties as Record<string, unknown>;
-    const env = (fnProps.environment as Record<string, unknown>).variables as Record<string, unknown>;
+    const env = (fnProps.Environment as Record<string, unknown>).Variables as Record<string, unknown>;
     expect(env.BUCKET).toEqual({ Ref: "B" });
   });
 });

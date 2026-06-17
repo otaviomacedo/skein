@@ -51,22 +51,22 @@ describe("integration: static site with Lambda deployer", () => {
 
     // Verify bucket has all transformer properties merged
     const bucketProps = template.Resources.ContentBucket.Properties as Record<string, unknown>;
-    expect(bucketProps.versioningConfiguration).toEqual({ status: "Enabled" });
-    expect(bucketProps.bucketEncryption).toBeDefined();
-    expect(bucketProps.websiteConfiguration).toEqual({
-      indexDocument: "index.html",
-      errorDocument: "error.html",
+    expect(bucketProps.VersioningConfiguration).toEqual({ Status: "Enabled" });
+    expect(bucketProps.BucketEncryption).toBeDefined();
+    expect(bucketProps.WebsiteConfiguration).toEqual({
+      IndexDocument: "index.html",
+      ErrorDocument: "error.html",
     });
-    expect(bucketProps.publicAccessBlockConfiguration).toEqual({
-      blockPublicAcls: true,
-      blockPublicPolicy: true,
-      ignorePublicAcls: true,
-      restrictPublicBuckets: true,
+    expect(bucketProps.PublicAccessBlockConfiguration).toEqual({
+      BlockPublicAcls: true,
+      BlockPublicPolicy: true,
+      IgnorePublicAcls: true,
+      RestrictPublicBuckets: true,
     });
 
     // Verify function references role
     const fnProps = template.Resources.Deployer.Properties as Record<string, unknown>;
-    expect(fnProps.role).toEqual({ "Fn::GetAtt": ["DeployerRole", "Arn"] });
+    expect(fnProps.Role).toEqual({ "Fn::GetAtt": ["DeployerRole", "Arn"] });
 
     // Verify policies reference both bucket and role
     const readPolicyId = "DeployerRoleContentBucketReadPolicy";
@@ -75,7 +75,7 @@ describe("integration: static site with Lambda deployer", () => {
     expect(template.Resources[writePolicyId]).toBeDefined();
 
     const readPolicyProps = template.Resources[readPolicyId].Properties as Record<string, unknown>;
-    expect(readPolicyProps.roles).toEqual([{ Ref: "DeployerRole" }]);
+    expect(readPolicyProps.Roles).toEqual([{ Ref: "DeployerRole" }]);
 
     // Verify DependsOn
     expect(template.Resources.Deployer.DependsOn).toContain("DeployerRole");
@@ -92,9 +92,9 @@ describe("integration: static site with Lambda deployer", () => {
     const template = synth();
     const props = template.Resources.B.Properties as Record<string, unknown>;
 
-    expect(props.bucketEncryption).toBeDefined();
-    expect(props.versioningConfiguration).toEqual({ status: "Enabled" });
-    expect(props.websiteConfiguration).toBeDefined();
+    expect(props.BucketEncryption).toBeDefined();
+    expect(props.VersioningConfiguration).toEqual({ Status: "Enabled" });
+    expect(props.WebsiteConfiguration).toBeDefined();
   });
 
   it("typed references are accessible through resource properties", () => {
@@ -119,7 +119,7 @@ describe("integration: static site with Lambda deployer", () => {
     // And it resolves correctly in the template
     const template = synth();
     const fnProps = template.Resources.MyFunc.Properties as Record<string, unknown>;
-    expect(fnProps.role).toEqual({ "Fn::GetAtt": ["MyRole", "Arn"] });
+    expect(fnProps.Role).toEqual({ "Fn::GetAtt": ["MyRole", "Arn"] });
   });
 
   it("parallel grants create independent policies", () => {

@@ -3,7 +3,7 @@ import { Queue } from "../generated/sqs.js";
 import { Policy, mkPolicy, Role } from "../generated/iam.js";
 import { EventSourceMapping, mkEventSourceMapping } from "../generated/lambda.js";
 import { deriveId, ref } from "../runtime/resource.js";
-import { updateResource } from "../runtime/registry.js";
+import { updateResource, addDependency } from "../runtime/registry.js";
 import { box } from "../runtime/box.js";
 
 export const grantSendMessage = box(
@@ -48,12 +48,15 @@ export const triggerFromQueue = box(
       roles: [ref(role)],
     });
 
-    const mapping = mkEventSourceMapping(deriveId(fn, queue, "Trigger"), {
+    const mappingId = deriveId(fn, queue, "Trigger");
+    const mapping = mkEventSourceMapping(mappingId, {
       eventSourceArn: queue.arn,
       functionName: ref(fn),
       batchSize,
       enabled: true,
     });
+
+    addDependency(mappingId, policy.logicalId);
 
     return [fn, queue, mapping, policy];
   },
