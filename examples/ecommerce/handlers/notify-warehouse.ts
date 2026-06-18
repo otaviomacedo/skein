@@ -11,3 +11,4 @@ export async function handler(event: WarehouseEvent) {
 
   return { processed: event.Records.length };
 }
+

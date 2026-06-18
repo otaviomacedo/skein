@@ -1,4 +1,4 @@
-import { DynamoDBClient, GetItemCommand, PutItemCommand, QueryCommand } from "@aws-sdk/client-dynamodb";
+import { DynamoDBClient, GetItemCommand, PutItemCommand, ScanCommand } from "@aws-sdk/client-dynamodb";
 import { SFNClient, StartExecutionCommand } from "@aws-sdk/client-sfn";
 import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
 
@@ -45,12 +45,13 @@ async function getOrder(event: Event) {
 }
 
 async function listOrders() {
-  const result = await db.send(new QueryCommand({
+  const result = await db.send(new ScanCommand({
     TableName: TABLE,
-    KeyConditionExpression: "begins_with(pk, :prefix)",
+    FilterExpression: "begins_with(pk, :prefix)",
     ExpressionAttributeValues: marshall({ ":prefix": "ORDER#" }),
     Limit: 50,
   }));
   const items = (result.Items || []).map(unmarshall);
   return { statusCode: 200, body: JSON.stringify(items) };
 }
+

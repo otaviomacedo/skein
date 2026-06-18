@@ -16,11 +16,12 @@ export async function handler(event: InventoryEvent) {
     await db.send(new UpdateItemCommand({
       TableName: TABLE,
       Key: marshall({ pk: `SKU#${item.sku}`, sk: "STOCK" }),
-      UpdateExpression: "SET reserved = reserved + :qty",
-      ExpressionAttributeValues: marshall({ ":qty": item.quantity }),
+      UpdateExpression: "SET reserved = if_not_exists(reserved, :zero) + :qty",
+      ExpressionAttributeValues: marshall({ ":qty": item.quantity, ":zero": 0 }),
     }));
     reservations.push(`${item.sku}:${item.quantity}`);
   }
 
   return { ...event, reservations, inventoryReserved: true };
 }
+

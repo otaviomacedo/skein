@@ -11,3 +11,4 @@ export async function handler(event: ConfirmationEvent) {
 
   return { ...event, confirmationSent: true, sentAt: new Date().toISOString() };
 }
+

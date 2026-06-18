@@ -153,10 +153,19 @@ async function commandDiff(entry: string, outDir: string) {
 }
 
 async function commandDeploy(entry: string, outDir: string, qualifier?: string, region?: string) {
+  // Resolve account/region before loading the app so setAssetEnvironment can use them
+  const { STSClient, GetCallerIdentityCommand } = await import("@aws-sdk/client-sts");
+  const sts = new STSClient({ region });
+  const identity = await sts.send(new GetCallerIdentityCommand({}));
+  const resolvedRegion = region ?? process.env.AWS_REGION ?? process.env.AWS_DEFAULT_REGION ?? "us-east-1";
+
+  process.env.CDK_DEFAULT_ACCOUNT = identity.Account;
+  process.env.CDK_DEFAULT_REGION = resolvedRegion;
+
   await loadApp(entry);
   writeCloudAssembly(outDir);
 
-  await deploy({ outDir, qualifier, region });
+  await deploy({ outDir, qualifier, region: resolvedRegion });
 }
 
 async function main() {

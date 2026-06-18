@@ -16,3 +16,4 @@ export async function handler(event: PaymentEvent) {
 
   return { ...event, paymentStatus: "CHARGED", chargeId };
 }
+

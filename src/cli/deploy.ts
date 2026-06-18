@@ -6,12 +6,11 @@ import {
   DescribeStackEventsCommand,
   type StackEvent,
 } from "@aws-sdk/client-cloudformation";
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { STSClient, AssumeRoleCommand, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { execSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { AssemblyManifest } from "./assembly.js";
 import { AssetManifestEntry } from "../runtime/assets.js";
 
@@ -68,16 +67,25 @@ export async function deploy(config: DeployConfig): Promise<void> {
   console.log(`Qualifier: ${qualifier}`);
   console.log(`Bucket:    ${ctx.bucket}`);
 
-  // 1. Assume file publishing role and upload assets
-  let assetKeys = new Map<string, string>();
-  if (manifest.assets.assets.length > 0) {
-    console.log(`\nUploading ${manifest.assets.assets.length} asset(s)...`);
+  // 1. Build and publish assets
+  const fileAssets = manifest.assets.assets.filter(a => a.source.type !== "docker");
+  const dockerAssets = manifest.assets.assets.filter(a => a.source.type === "docker");
+
+  if (fileAssets.length > 0) {
+    console.log(`\nUploading ${fileAssets.length} file asset(s)...`);
     const s3Creds = await assumeRole(sts, ctx.filePublishingRoleArn, "skein-file-publish");
     const s3 = new S3Client({ region, credentials: s3Creds });
-    assetKeys = await uploadAssets(manifest.assets.assets, s3, ctx.bucket, outDir);
+    await uploadAssets(fileAssets, s3, ctx.bucket, outDir);
+  }
+
+  if (dockerAssets.length > 0) {
+    console.log(`\nBuilding and pushing ${dockerAssets.length} Docker image(s)...`);
+    const imgCreds = await assumeRole(sts, ctx.imagePublishingRoleArn, "skein-image-publish");
+    await buildAndPushImages(dockerAssets, ctx, imgCreds, outDir);
   }
 
   // 2. Assume deploy role and deploy stacks
+  // Templates already have literal asset locations (resolved at synth time)
   const deployCreds = await assumeRole(sts, ctx.deployRoleArn, "skein-deploy");
   const cfn = new CloudFormationClient({ region, credentials: deployCreds });
 
@@ -89,12 +97,7 @@ export async function deploy(config: DeployConfig): Promise<void> {
     const templatePath = join(outDir, stackDef.template);
     const templateBody = readFileSync(templatePath, "utf-8");
 
-    const resolvedBody = substituteAssetTokens(templateBody, manifest.assets.assets, ctx.bucket, assetKeys);
-
-    // Write the resolved template back so it's directly deployable
-    writeFileSync(templatePath, resolvedBody);
-
-    await deployStack(cfn, stackName, resolvedBody, ctx.cfnExecRoleArn);
+    await deployStack(cfn, stackName, templateBody, ctx.cfnExecRoleArn);
   }
 
   console.log("\n✓ Deploy complete.");
@@ -130,26 +133,101 @@ async function assumeRole(
   };
 }
 
-// === Asset handling ===
+// === Docker asset handling ===
+
+async function buildAndPushImages(
+  assets: AssetManifestEntry[],
+  ctx: BootstrapContext,
+  creds: Credentials,
+  outDir: string,
+): Promise<void> {
+  const ecrEndpoint = `${ctx.account}.dkr.ecr.${ctx.region}.amazonaws.com`;
+  const repo = `${ecrEndpoint}/${ctx.ecrRepo}`;
+
+  execSync(
+    `aws ecr get-login-password --region ${ctx.region} | docker login --username AWS --password-stdin ${ecrEndpoint}`,
+    {
+      env: {
+        ...process.env,
+        AWS_ACCESS_KEY_ID: creds.accessKeyId,
+        AWS_SECRET_ACCESS_KEY: creds.secretAccessKey,
+        AWS_SESSION_TOKEN: creds.sessionToken,
+        AWS_REGION: ctx.region,
+      },
+      stdio: "pipe",
+    },
+  );
+
+  for (const asset of assets) {
+    const source = asset.source as { type: "docker"; path: string; file?: string; buildArgs?: Record<string, string> };
+    const contextPath = resolve(source.path);
+    const dockerfile = source.file ?? "Dockerfile";
+    const tag = `${repo}:${asset.destination.imageTag}`;
+
+    if (imageExists(ecrEndpoint, ctx.ecrRepo, asset.destination.imageTag!, creds, ctx.region)) {
+      console.log(`  ✓ ${asset.id} (already pushed)`);
+      continue;
+    }
+
+    let buildCmd = `docker build -t "${tag}" -f "${join(contextPath, dockerfile)}" "${contextPath}"`;
+    if (source.buildArgs) {
+      for (const [k, v] of Object.entries(source.buildArgs)) {
+        buildCmd += ` --build-arg ${k}=${v}`;
+      }
+    }
+
+    console.log(`  🔨 ${asset.id}: building...`);
+    execSync(buildCmd, { stdio: "pipe", env: { ...process.env, DOCKER_DEFAULT_PLATFORM: "linux/amd64" } });
+
+    console.log(`  ↑ ${asset.id} → ${tag}`);
+    execSync(`docker push "${tag}"`, { stdio: "pipe" });
+  }
+}
+
+function imageExists(
+  ecrEndpoint: string,
+  repository: string,
+  imageTag: string,
+  creds: Credentials,
+  region: string,
+): boolean {
+  try {
+    execSync(
+      `aws ecr describe-images --repository-name "${repository}" --image-ids imageTag="${imageTag}" --region ${region}`,
+      {
+        env: {
+          ...process.env,
+          AWS_ACCESS_KEY_ID: creds.accessKeyId,
+          AWS_SECRET_ACCESS_KEY: creds.secretAccessKey,
+          AWS_SESSION_TOKEN: creds.sessionToken,
+          AWS_REGION: region,
+        },
+        stdio: "pipe",
+      },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// === File asset handling ===
 
 async function uploadAssets(
   assets: AssetManifestEntry[],
   s3: S3Client,
   bucket: string,
   outDir: string,
-): Promise<Map<string, string>> {
-  const keys = new Map<string, string>();
-
+): Promise<void> {
   for (const asset of assets) {
-    if (asset.source.type === "docker") {
-      console.log(`  ⚠ ${asset.id}: Docker assets require 'docker push' (skipped)`);
+    const key = `${asset.id}/${asset.hash}.zip`;
+
+    if (await objectExists(s3, bucket, key)) {
+      console.log(`  ✓ ${asset.id} (already uploaded)`);
       continue;
     }
 
     const built = buildAsset(asset, outDir);
-    const key = `${asset.id}/${built.hash}${built.extension}`;
-    keys.set(asset.id, key);
-
     console.log(`  ↑ ${asset.id} → s3://${bucket}/${key}`);
     await s3.send(new PutObjectCommand({
       Bucket: bucket,
@@ -157,13 +235,19 @@ async function uploadAssets(
       Body: built.content,
     }));
   }
+}
 
-  return keys;
+async function objectExists(s3: S3Client, bucket: string, key: string): Promise<boolean> {
+  try {
+    await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 type BuiltAsset = {
   content: Buffer;
-  hash: string;
   extension: string;
 };
 
@@ -180,22 +264,22 @@ function buildAsset(entry: AssetManifestEntry, outDir: string): BuiltAsset {
         const bundleDir = join(outDir, `${entry.id}-bundle`);
         const outFile = join(bundleDir, "index.js");
         execSync(`mkdir -p "${bundleDir}"`);
-        execSync(`npx esbuild "${filePath}" --bundle --platform=node --target=node20 --outfile="${outFile}" --format=esm 2>/dev/null || npx esbuild "${filePath}" --bundle --platform=node --target=node20 --outfile="${outFile}" --format=cjs`);
+        execSync(`npx esbuild "${filePath}" --bundle --platform=node --target=node20 --outfile="${outFile}" --format=cjs --external:@aws-sdk/*`);
         const zipPath = join(outDir, `${entry.id}.zip`);
         execSync(`cd "${bundleDir}" && zip -qr "${resolve(zipPath)}" .`);
         const content = readFileSync(zipPath);
-        return { content, hash: hashContent(content), extension: ".zip" };
+        return { content, extension: ".zip" };
       }
 
       // Other files: upload as-is
       const content = readFileSync(filePath);
-      return { content, hash: hashContent(content), extension: ext };
+      return { content, extension: ext };
     }
     case "directory": {
       const zipPath = join(outDir, `${entry.id}.zip`);
       execSync(`cd "${resolve(source.path)}" && zip -qr "${resolve(zipPath)}" .`);
       const content = readFileSync(zipPath);
-      return { content, hash: hashContent(content), extension: ".zip" };
+      return { content, extension: ".zip" };
     }
     case "bundle": {
       const zipPath = join(outDir, `${entry.id}.zip`);
@@ -205,43 +289,16 @@ function buildAsset(entry: AssetManifestEntry, outDir: string): BuiltAsset {
       }
       execSync(`cd "${srcPath}" && zip -qr "${resolve(zipPath)}" .`);
       const content = readFileSync(zipPath);
-      return { content, hash: hashContent(content), extension: ".zip" };
+      return { content, extension: ".zip" };
     }
     case "docker":
       throw new Error("Unreachable: docker assets filtered before buildAsset");
   }
 }
 
-function hashContent(content: Buffer): string {
-  return createHash("sha256").update(content).digest("hex").slice(0, 16);
-}
-
 function extOf(path: string): string {
   const dot = path.lastIndexOf(".");
   return dot >= 0 ? path.slice(dot) : "";
-}
-
-function substituteAssetTokens(
-  templateBody: string,
-  assets: AssetManifestEntry[],
-  bucket: string,
-  assetKeys: Map<string, string>,
-): string {
-  let result = templateBody;
-  for (const asset of assets) {
-    if (asset.source.type === "docker") continue;
-    const key = assetKeys.get(asset.id);
-    if (!key) continue;
-
-    result = result
-      .replace(new RegExp(`\\{\\s*"Ref"\\s*:\\s*"__asset_bucket__${asset.id}"\\s*\\}`, "g"),
-        JSON.stringify(bucket))
-      .replace(new RegExp(`\\{\\s*"Ref"\\s*:\\s*"__asset_key__${asset.id}"\\s*\\}`, "g"),
-        JSON.stringify(key))
-      .replace(new RegExp(`\\{\\s*"Ref"\\s*:\\s*"__asset_url__${asset.id}"\\s*\\}`, "g"),
-        JSON.stringify(`https://${bucket}.s3.amazonaws.com/${key}`));
-  }
-  return result;
 }
 
 // === Stack deployment ===

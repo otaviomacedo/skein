@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { resetTokens } from "../src/runtime/tokens";
 import { resetRegistry } from "../src/runtime/registry";
-import { resetAssets, mkAsset, mkDockerAsset, getAssetManifest } from "../src/runtime/assets";
+import { resetAssets, mkAsset, mkDockerAsset, getAssetManifest, setAssetEnvironment } from "../src/runtime/assets";
 import { synth } from "../src/runtime/synth";
 import { mkFunction } from "../src/lib/lambda";
 import { mkRole } from "../src/generated/iam";
@@ -10,6 +10,7 @@ function reset() {
   resetTokens();
   resetRegistry();
   resetAssets();
+  setAssetEnvironment({ account: "123456789012", region: "us-east-1" });
 }
 
 describe("assets", () => {
@@ -52,20 +53,19 @@ describe("assets", () => {
 
     const template = synth();
 
-    // Asset tokens resolve to Refs (deploy tool substitutes later)
+    // Asset values are literal strings resolved at synth time
     const fnProps = template.Resources.Fn.Properties as Record<string, unknown>;
     const code = fnProps.Code as Record<string, unknown>;
-    expect(code.S3Bucket).toEqual({ Ref: "__asset_bucket__Code" });
-    expect(code.S3Key).toEqual({ Ref: "__asset_key__Code" });
+    expect(code.S3Bucket).toBe("cdk-hnb659fds-assets-123456789012-us-east-1");
+    expect(code.S3Key).toMatch(/^Code\/[a-f0-9]+\.zip$/);
 
-    // Manifest has the asset
+    // Manifest has the asset with hash
     const manifest = getAssetManifest();
     expect(manifest.assets).toHaveLength(1);
-    expect(manifest.assets[0]).toEqual({
-      id: "Code",
-      source: { type: "directory", path: "./dist" },
-      destination: { type: "s3" },
-    });
+    expect(manifest.assets[0].id).toBe("Code");
+    expect(manifest.assets[0].source).toEqual({ type: "directory", path: "./dist" });
+    expect(manifest.assets[0].destination.type).toBe("s3");
+    expect(manifest.assets[0].hash).toBeDefined();
   });
 
   it("builds an asset manifest with multiple assets", () => {

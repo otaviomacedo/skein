@@ -4,9 +4,9 @@
  * Architecture:
  *
  *   ┌─────────────────────────────────────────────────────────────────────┐
- *   │ VPC (10.0.0.0/16)                                                  │
- *   │   Public Subnets  → ALB → Product Catalog (Fargate)                │
- *   │   Private Subnets → Product Catalog containers                     │
+ *   │ VPC (10.0.0.0/16)                                                   │
+ *   │   Public Subnets  → ALB → Product Catalog (Fargate)                 │
+ *   │   Private Subnets → Product Catalog containers                      │
  *   └─────────────────────────────────────────────────────────────────────┘
  *
  *   Orders API (API Gateway + Lambda + DynamoDB)
@@ -31,7 +31,7 @@ import { mkQueue } from "../../src/generated/sqs.js";
 import { mkTopic } from "../../src/generated/sns.js";
 import { ref } from "../../src/runtime/resource.js";
 import { output } from "../../src/runtime/outputs.js";
-import { mkAsset } from "../../src/runtime/assets.js";
+import { mkAsset, mkDockerAsset, setAssetEnvironment } from "../../src/runtime/assets.js";
 import { mkLambda } from "../../src/boxes/lambda-helpers.js";
 import { pipe } from "../../src/boxes/pipe.js";
 import { addEnvironment } from "../../src/boxes/lambda.js";
@@ -44,6 +44,7 @@ import { fargateService } from "../../src/boxes/fargate.js";
 import { stepFunctionsPipeline } from "../../src/boxes/step-functions.js";
 import { queueProcessor } from "../../src/boxes/queue-processor.js";
 import { grantStartExecution } from "../../src/boxes/step-functions-grant.js";
+import { grantTableReadWrite } from "../../src/boxes/dynamodb.js";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Networking
@@ -109,6 +110,15 @@ const fulfillmentDLQ = mkQueue("FulfillmentDLQ", {
 withDLQ(fulfillmentQueue, fulfillmentDLQ, 3);
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Asset environment (determines S3 bucket and ECR repo names)
+// ═══════════════════════════════════════════════════════════════════════════
+
+setAssetEnvironment({
+  account: process.env.CDK_DEFAULT_ACCOUNT ?? process.env.AWS_ACCOUNT_ID ?? "000000000000",
+  region: process.env.CDK_DEFAULT_REGION ?? process.env.AWS_REGION ?? "us-east-1",
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Assets (Lambda code bundles)
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -134,7 +144,7 @@ const { handler: ordersHandler, stageUrl } = crudApi("Orders", {
   },
   functionProps: {
     runtime: "nodejs20.x",
-    handler: "orders-api.handler",
+    handler: "index.handler",
     code: { s3Bucket: ordersApiCode.s3Bucket, s3Key: ordersApiCode.s3Key },
     timeout: 30,
     memorySize: 256,
@@ -148,7 +158,7 @@ const { handler: ordersHandler, stageUrl } = crudApi("Orders", {
 
 const validateFn = mkLambda("ValidateOrder", {
   runtime: "nodejs20.x",
-  handler: "validate-order.handler",
+  handler: "index.handler",
   code: { s3Bucket: validateCode.s3Bucket, s3Key: validateCode.s3Key },
   timeout: 10,
   memorySize: 128,
@@ -156,7 +166,7 @@ const validateFn = mkLambda("ValidateOrder", {
 
 const chargeFn = mkLambda("ChargePayment", {
   runtime: "nodejs20.x",
-  handler: "charge-payment.handler",
+  handler: "index.handler",
   code: { s3Bucket: chargeCode.s3Bucket, s3Key: chargeCode.s3Key },
   timeout: 30,
   memorySize: 128,
@@ -164,17 +174,18 @@ const chargeFn = mkLambda("ChargePayment", {
 
 const reserveInventoryFn = pipe(mkLambda("ReserveInventory", {
   runtime: "nodejs20.x",
-  handler: "reserve-inventory.handler",
+  handler: "index.handler",
   code: { s3Bucket: reserveCode.s3Bucket, s3Key: reserveCode.s3Key },
   timeout: 30,
   memorySize: 128,
 }))
+  .to(grantTableReadWrite, inventoryTable)
   .to(addEnvironment, "INVENTORY_TABLE", ref(inventoryTable))
   .done();
 
 const sendConfirmationFn = mkLambda("SendConfirmation", {
   runtime: "nodejs20.x",
-  handler: "send-confirmation.handler",
+  handler: "index.handler",
   code: { s3Bucket: confirmCode.s3Bucket, s3Key: confirmCode.s3Key },
   timeout: 10,
   memorySize: 128,
@@ -194,7 +205,11 @@ const { stateMachine } = stepFunctionsPipeline("OrderFulfillment", {
     { name: "ReserveStock", fn: reserveInventoryFn },
     { name: "Confirm", fn: sendConfirmationFn },
     { name: "Done", succeed: true as const },
-    { name: "HighValueHold", seconds: 0 }, // Placeholder: would wait for manual approval
+    { name: "HighValueHold", seconds: 0 }, // Placeholder: in production, wait for manual approval
+    { name: "ProcessPaymentAfterHold", fn: chargeFn },
+    { name: "ReserveStockAfterHold", fn: reserveInventoryFn },
+    { name: "ConfirmAfterHold", fn: sendConfirmationFn },
+    { name: "DoneAfterHold", succeed: true as const },
     { name: "PaymentFailed", error: "PaymentError", cause: "Payment processing failed" },
   ],
 });
@@ -211,7 +226,7 @@ pipe(ordersHandler)
 
 const warehouseFn = mkLambda("NotifyWarehouse", {
   runtime: "nodejs20.x",
-  handler: "notify-warehouse.handler",
+  handler: "index.handler",
   code: { s3Bucket: warehouseCode.s3Bucket, s3Key: warehouseCode.s3Key },
   timeout: 10,
   memorySize: 128,
@@ -219,7 +234,7 @@ const warehouseFn = mkLambda("NotifyWarehouse", {
 
 const analyticsFn = mkLambda("NotifyAnalytics", {
   runtime: "nodejs20.x",
-  handler: "notify-analytics.handler",
+  handler: "index.handler",
   code: { s3Bucket: analyticsCode.s3Bucket, s3Key: analyticsCode.s3Key },
   timeout: 10,
   memorySize: 128,
@@ -236,7 +251,7 @@ queueProcessor("DLQProcessor", {
   queue: fulfillmentDLQ,
   functionProps: {
     runtime: "nodejs20.x",
-    handler: "dlq-processor.handler",
+    handler: "index.handler",
     code: { s3Bucket: dlqCode.s3Bucket, s3Key: dlqCode.s3Key },
     timeout: 60,
     memorySize: 128,
@@ -263,12 +278,16 @@ notifyOnAlarm(dlqAlarm, opsAlertTopic);
 // Product Catalog (Fargate)
 // ═══════════════════════════════════════════════════════════════════════════
 
+const productCatalogImage = mkDockerAsset("ProductCatalogImage", `${handlersDir}`, {
+  file: "Dockerfile",
+});
+
 const { alb } = fargateService("ProductCatalog", {
   vpc: vpcResource,
   subnets: privateSubnets,
   albSubnets: publicSubnets,
   container: {
-    image: "public.ecr.aws/nginx/nginx:latest",
+    image: productCatalogImage.imageUri,
     port: 80,
     environment: {
       NODE_ENV: "production",

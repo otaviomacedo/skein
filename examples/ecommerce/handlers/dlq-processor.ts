@@ -28,3 +28,4 @@ export async function handler(event: SQSEvent) {
 
   return { processed: event.Records.length };
 }
+

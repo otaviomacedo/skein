@@ -5,7 +5,7 @@ import { resetMappings } from "../runtime/mappings.js";
 import { resetParameters } from "../runtime/parameters.js";
 import { resetOutputs } from "../runtime/outputs.js";
 import { resetStacks } from "../runtime/stacks.js";
-import { resetAssets } from "../runtime/assets.js";
+import { resetAssets, setAssetEnvironment } from "../runtime/assets.js";
 import { resetGraph } from "../runtime/graph.js";
 import { synth, Template, TemplateResource } from "../runtime/synth.js";
 
@@ -19,6 +19,7 @@ export function resetAll(): void {
   resetStacks();
   resetAssets();
   resetGraph();
+  setAssetEnvironment({ account: "123456789012", region: "us-east-1" });
 }
 
 export function synthTest(fn: () => void): Template {

@@ -7,6 +7,6 @@ export { mkMapping, findInMap } from "./runtime/mappings.js";
 export { mkParameter, paramRef, pseudoParam } from "./runtime/parameters.js";
 export { output } from "./runtime/outputs.js";
 export { assignStack } from "./runtime/stacks.js";
-export { mkAsset, mkDockerAsset } from "./runtime/assets.js";
+export { mkAsset, mkDockerAsset, setAssetEnvironment } from "./runtime/assets.js";
 export { discard } from "./runtime/registry.js";
 export { box } from "./runtime/box.js";

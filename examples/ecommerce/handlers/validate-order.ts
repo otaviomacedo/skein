@@ -20,3 +20,4 @@ export async function handler(event: OrderEvent) {
 
   return { ...event, total, validated: true };
 }
+

@@ -10,3 +10,4 @@ export async function handler(event: AnalyticsEvent) {
 
   return { recorded: event.Records.length };
 }
+
