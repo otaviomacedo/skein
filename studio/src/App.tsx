@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   ReactFlow,
   Background,
@@ -7,6 +7,8 @@ import {
   Panel,
   useNodesState,
   useEdgesState,
+  useReactFlow,
+  ReactFlowProvider,
   type Node,
   type Edge,
   type OnSelectionChangeParams,
@@ -17,9 +19,10 @@ import "@xyflow/react/dist/style.css";
 import { GraphIR, BoxCall } from "./types";
 import { graphToFlow } from "./graphToFlow";
 import { BoxNode } from "./BoxNode";
+import { GroupNode } from "./GroupNode";
 import { DetailPanel } from "./DetailPanel";
 
-const nodeTypes = { box: BoxNode };
+const nodeTypes = { box: BoxNode, group: GroupNode };
 
 function getConnectedNodeIds(selectedId: string | null, edges: Edge[]): Set<string> | null {
   if (!selectedId) return null;
@@ -107,12 +110,16 @@ function App() {
     [graph],
   );
 
+  const { fitView } = useReactFlow();
+  const pendingFocusNode = useRef<string | null>(null);
+
   const onNodeDoubleClick: NodeMouseHandler = useCallback(
     (_event, node) => {
       if (!graph) return;
       const boxCall = graph.nodes.find((n) => n.id === node.id);
       if (!boxCall || boxCall.children.length === 0) return;
 
+      pendingFocusNode.current = node.id;
       setExpandedNodes((prev) => {
         const next = new Set(prev);
         if (next.has(node.id)) {
@@ -125,6 +132,36 @@ function App() {
     },
     [graph],
   );
+
+  // Center on the expanded/collapsed node after layout updates
+  useEffect(() => {
+    if (pendingFocusNode.current && nodes.length > 0) {
+      const nodeId = pendingFocusNode.current;
+      pendingFocusNode.current = null;
+      // Small delay to let React Flow measure the nodes
+      setTimeout(() => {
+        fitView({ nodes: [{ id: nodeId }], duration: 300, padding: 0.3 });
+      }, 50);
+    }
+  }, [nodes, fitView]);
+
+  // Handle collapse button clicks from GroupNode
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      const btn = (e.target as HTMLElement).closest(".collapse-btn") as HTMLElement | null;
+      if (!btn) return;
+      const nodeId = btn.dataset.nodeId;
+      if (!nodeId) return;
+      pendingFocusNode.current = nodeId;
+      setExpandedNodes((prev) => {
+        const next = new Set(prev);
+        next.delete(nodeId);
+        return next;
+      });
+    }
+    document.addEventListener("click", handleClick);
+    return () => document.removeEventListener("click", handleClick);
+  }, []);
 
   const collapseAll = useCallback(() => setExpandedNodes(new Set()), []);
   const expandAll = useCallback(() => {

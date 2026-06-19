@@ -27,10 +27,6 @@ function getPrimaryColor(node: BoxCall): string {
   return primary ? getColor(primary.type) : "#6B7280";
 }
 
-function shortType(type: string): string {
-  return type.split("::")[2] ?? type;
-}
-
 export function graphToFlow(
   graph: GraphIR,
   expandedNodes: Set<string>,
@@ -39,10 +35,7 @@ export function graphToFlow(
   const edges: Edge[] = [];
   const nodesById = new Map(graph.nodes.map((n) => [n.id, n]));
 
-  // Determine which nodes are visible:
-  // A node is visible if:
-  // 1. It has no parent (top-level), OR
-  // 2. Its parent is expanded (recursively up the chain)
+  // Determine which nodes are visible
   const visibleNodes = new Set<string>();
   for (const node of graph.nodes) {
     if (isVisible(node, nodesById, expandedNodes)) {
@@ -50,66 +43,165 @@ export function graphToFlow(
     }
   }
 
-  // Promote edges: if source or target is hidden, reroute to nearest visible ancestor
-  const promotedEdges = promoteEdges(graph.edges, visibleNodes, nodesById);
-  const levels = computeLevels(
-    graph.nodes.filter((n) => visibleNodes.has(n.id)),
-    promotedEdges,
+  // Promote edges
+  const promotedEdges = promoteEdges(graph.edges, visibleNodes, nodesById, expandedNodes);
+
+  // Compute levels for top-level nodes (those without a visible expanded parent)
+  const topLevelVisible = graph.nodes.filter(
+    (n) => visibleNodes.has(n.id) && !isInsideExpandedParent(n, expandedNodes),
   );
+  const topLevelEdges = promotedEdges.filter(
+    (e) => !isInsideExpandedParent(nodesById.get(e.from)!, expandedNodes) ||
+           !isInsideExpandedParent(nodesById.get(e.to)!, expandedNodes),
+  );
+  const topLevels = computeLevels(topLevelVisible, topLevelEdges);
 
   const X_SPACING = 280;
   const Y_SPACING = 100;
+  const CHILD_X_SPACING = 220;
+  const CHILD_Y_SPACING = 80;
+  const GROUP_PADDING = 60;
+
+  // Layout top-level nodes
   const levelCounts = new Map<number, number>();
 
   for (const node of graph.nodes) {
     if (!visibleNodes.has(node.id)) continue;
 
-    const level = levels.get(node.id) ?? 0;
-    const row = levelCounts.get(level) ?? 0;
-    levelCounts.set(level, row + 1);
-
+    const isExpanded = expandedNodes.has(node.id);
+    const hasChildren = node.children.length > 0;
     const color = getPrimaryColor(node);
     const resourceIds = node.outputs.map((o) => o.resourceId);
-    const hasChildren = node.children.length > 0;
-    const isExpanded = expandedNodes.has(node.id);
 
-    // Show logicalId only for boxes that explicitly name their primary output.
-    // Heuristic: a box is "named" if it's a constructor (no inputs) OR if it
-    // produces an output not present in its inputs AND that output doesn't look
-    // like a derived ID (i.e., it doesn't contain any input resourceId as a prefix).
-    const inputIds = new Set(node.inputs.map((i) => i.resourceId));
-    const createdOutput = node.outputs.find((o) => !inputIds.has(o.resourceId));
+    // Determine logicalId
+    const inputIdSet = new Set(node.inputs.map((i) => i.resourceId));
+    const createdOutput = node.outputs.find((o) => !inputIdSet.has(o.resourceId));
     const isConstructor = node.inputs.length === 0;
-    const isDerivedId = createdOutput && [...inputIds].some(
+    const isDerivedId = createdOutput && [...inputIdSet].some(
       (id) => createdOutput.resourceId.includes(id),
     );
     const logicalId = createdOutput && (isConstructor || !isDerivedId)
       ? createdOutput.resourceId
       : undefined;
 
-    const nodeData: BoxNodeData = {
-      label: node.box,
-      logicalId,
-      resourceIds,
-      inputNames: node.inputs.map((i) => i.resourceId),
-      inputCount: node.inputs.length,
-      outputCount: node.outputs.length,
-      color,
-      isGenerator: node.inputs.length === 0 && node.children.length === 0,
-      isComposite: hasChildren,
-      isExpanded,
-      childCount: node.children.length,
-    };
+    // Is this node inside an expanded parent?
+    const expandedParent = getExpandedParent(node, expandedNodes);
 
-    nodes.push({
-      id: node.id,
-      position: { x: level * X_SPACING, y: row * Y_SPACING },
-      data: nodeData,
-      type: "box",
-    });
+    if (expandedParent && isExpanded) {
+      // This is an expanded node inside another expanded node — render as group inside group
+      // For now, only support one level of nesting (expanded nodes at top level)
+      continue;
+    }
+
+    if (expandedParent) {
+      // This node is a child of an expanded parent — position relative to parent
+      const siblings = nodesById.get(expandedParent)!.children
+        .filter((cid) => visibleNodes.has(cid));
+      const childIndex = siblings.indexOf(node.id);
+
+      // Layout children in a grid inside the parent
+      const childLevels = computeLevelsForChildren(siblings, promotedEdges, nodesById);
+      const childLevel = childLevels.get(node.id) ?? 0;
+      const childRow = countPrecedingAtLevel(node.id, childLevel, siblings, childLevels);
+
+      const nodeData: BoxNodeData = {
+        label: node.box,
+        logicalId,
+        resourceIds,
+        inputNames: node.inputs.map((i) => i.resourceId),
+        inputCount: node.inputs.length,
+        outputCount: node.outputs.length,
+        color,
+        isGenerator: node.inputs.length === 0 && node.children.length === 0,
+        isComposite: hasChildren,
+        isExpanded,
+        childCount: node.children.length,
+      };
+
+      nodes.push({
+        id: node.id,
+        position: {
+          x: GROUP_PADDING + childLevel * CHILD_X_SPACING,
+          y: GROUP_PADDING + 30 + childRow * CHILD_Y_SPACING,
+        },
+        data: nodeData,
+        type: "box",
+        parentId: expandedParent,
+        extent: "parent" as const,
+      });
+    } else {
+      // Top-level node
+      const level = topLevels.get(node.id) ?? 0;
+      const row = levelCounts.get(level) ?? 0;
+      levelCounts.set(level, row + 1);
+
+      if (isExpanded) {
+        // Render as a group (large container)
+        const childCount = node.children.filter((cid) => visibleNodes.has(cid)).length;
+        const childLevels = computeLevelsForChildren(
+          node.children.filter((cid) => visibleNodes.has(cid)),
+          promotedEdges,
+          nodesById,
+        );
+        const maxLevel = Math.max(0, ...childLevels.values());
+        const maxRow = Math.max(0, ...countRowsPerLevel(childLevels).values());
+
+        const groupWidth = Math.max(300, (maxLevel + 1) * CHILD_X_SPACING + GROUP_PADDING * 2);
+        const groupHeight = Math.max(200, (maxRow + 1) * CHILD_Y_SPACING + GROUP_PADDING * 2 + 30);
+
+        nodes.push({
+          id: node.id,
+          position: { x: level * X_SPACING, y: row * (groupHeight + 40) },
+          data: {
+            label: node.box,
+            logicalId,
+            resourceIds,
+            inputNames: [],
+            inputCount: 0,
+            outputCount: 0,
+            color,
+            isGenerator: false,
+            isComposite: true,
+            isExpanded: true,
+            childCount: node.children.length,
+          } as BoxNodeData,
+          type: "group",
+          style: {
+            width: groupWidth,
+            height: groupHeight,
+            background: `${color}08`,
+            border: `2px dashed ${color}`,
+            borderRadius: 12,
+            padding: 10,
+          },
+        });
+      } else {
+        // Normal collapsed node
+        const nodeData: BoxNodeData = {
+          label: node.box,
+          logicalId,
+          resourceIds,
+          inputNames: node.inputs.map((i) => i.resourceId),
+          inputCount: node.inputs.length,
+          outputCount: node.outputs.length,
+          color,
+          isGenerator: node.inputs.length === 0 && node.children.length === 0,
+          isComposite: hasChildren,
+          isExpanded: false,
+          childCount: node.children.length,
+        };
+
+        nodes.push({
+          id: node.id,
+          position: { x: level * X_SPACING, y: row * Y_SPACING },
+          data: nodeData,
+          type: "box",
+        });
+      }
+    }
   }
 
-  // Edges: render promoted edges (deduplicated per source-target pair, no self-loops)
+  // Edges
   const edgeSeen = new Set<string>();
   for (const edge of promotedEdges) {
     if (edge.from === edge.to) continue;
@@ -137,6 +229,8 @@ export function graphToFlow(
   return { nodes, edges };
 }
 
+// === Helpers ===
+
 function isVisible(
   node: BoxCall,
   nodesById: Map<string, BoxCall>,
@@ -147,6 +241,15 @@ function isVisible(
   if (!parent) return true;
   if (!expandedNodes.has(node.parent)) return false;
   return isVisible(parent, nodesById, expandedNodes);
+}
+
+function isInsideExpandedParent(node: BoxCall, expandedNodes: Set<string>): boolean {
+  return !!node.parent && expandedNodes.has(node.parent);
+}
+
+function getExpandedParent(node: BoxCall, expandedNodes: Set<string>): string | undefined {
+  if (node.parent && expandedNodes.has(node.parent)) return node.parent;
+  return undefined;
 }
 
 function findVisibleAncestor(
@@ -166,27 +269,86 @@ function promoteEdges(
   edges: { from: string; output: number; to: string; input: number }[],
   visibleNodes: Set<string>,
   nodesById: Map<string, BoxCall>,
+  expandedNodes: Set<string>,
 ): PromotedEdge[] {
   const result: PromotedEdge[] = [];
   for (const edge of edges) {
-    const from = findVisibleAncestor(edge.from, visibleNodes, nodesById);
-    const to = findVisibleAncestor(edge.to, visibleNodes, nodesById);
-    if (from && to) {
-      result.push({ from, output: edge.output, to, input: edge.input });
+    let from = findVisibleAncestor(edge.from, visibleNodes, nodesById);
+    let to = findVisibleAncestor(edge.to, visibleNodes, nodesById);
+    if (!from || !to) continue;
+
+    // If source is an expanded group, re-route to the internal child that
+    // produces the relevant output
+    if (from && expandedNodes.has(from)) {
+      const sourceNode = nodesById.get(from)!;
+      const outputResource = sourceNode.outputs[edge.output]?.resourceId;
+      if (outputResource) {
+        const internalProducer = findLastChildWithOutput(sourceNode, outputResource, nodesById, visibleNodes);
+        if (internalProducer) from = internalProducer;
+      }
     }
+
+    // If target is an expanded group, re-route to the internal child that
+    // consumes the relevant input
+    if (to && expandedNodes.has(to)) {
+      const targetNode = nodesById.get(to)!;
+      const inputResource = targetNode.inputs[edge.input]?.resourceId;
+      if (inputResource) {
+        const internalConsumer = findFirstChildWithInput(targetNode, inputResource, nodesById, visibleNodes);
+        if (internalConsumer) to = internalConsumer;
+      }
+    }
+
+    result.push({ from, output: edge.output, to, input: edge.input });
   }
   return result;
+}
+
+function findLastChildWithOutput(
+  parent: BoxCall,
+  resourceId: string,
+  nodesById: Map<string, BoxCall>,
+  visibleNodes: Set<string>,
+): string | null {
+  let lastFound: string | null = null;
+  for (const childId of parent.children) {
+    if (!visibleNodes.has(childId)) continue;
+    const child = nodesById.get(childId);
+    if (child?.outputs.some((o) => o.resourceId === resourceId)) {
+      lastFound = childId;
+    }
+  }
+  return lastFound;
+}
+
+function findFirstChildWithInput(
+  parent: BoxCall,
+  resourceId: string,
+  nodesById: Map<string, BoxCall>,
+  visibleNodes: Set<string>,
+): string | null {
+  for (const childId of parent.children) {
+    if (!visibleNodes.has(childId)) continue;
+    const child = nodesById.get(childId);
+    if (child?.inputs.some((i) => i.resourceId === resourceId)) {
+      return childId;
+    }
+  }
+  return null;
 }
 
 function computeLevels(nodes: BoxCall[], edges: { from: string; to: string }[]): Map<string, number> {
   const levels = new Map<string, number>();
   const incoming = new Map<string, Set<string>>();
+  const nodeIds = new Set(nodes.map((n) => n.id));
 
   for (const node of nodes) {
     incoming.set(node.id, new Set());
   }
   for (const edge of edges) {
-    incoming.get(edge.to)?.add(edge.from);
+    if (nodeIds.has(edge.from) && nodeIds.has(edge.to)) {
+      incoming.get(edge.to)?.add(edge.from);
+    }
   }
 
   const queue: string[] = [];
@@ -202,7 +364,7 @@ function computeLevels(nodes: BoxCall[], edges: { from: string; to: string }[]):
     const currentLevel = levels.get(current) ?? 0;
 
     for (const edge of edges) {
-      if (edge.from === current) {
+      if (edge.from === current && nodeIds.has(edge.to)) {
         const nextLevel = Math.max(levels.get(edge.to) ?? 0, currentLevel + 1);
         levels.set(edge.to, nextLevel);
         incoming.get(edge.to)?.delete(current);
@@ -218,4 +380,37 @@ function computeLevels(nodes: BoxCall[], edges: { from: string; to: string }[]):
   }
 
   return levels;
+}
+
+function computeLevelsForChildren(
+  childIds: string[],
+  edges: PromotedEdge[],
+  nodesById: Map<string, BoxCall>,
+): Map<string, number> {
+  const childSet = new Set(childIds);
+  const childEdges = edges.filter((e) => childSet.has(e.from) && childSet.has(e.to));
+  const childNodes = childIds.map((id) => nodesById.get(id)!).filter(Boolean);
+  return computeLevels(childNodes, childEdges);
+}
+
+function countPrecedingAtLevel(
+  nodeId: string,
+  level: number,
+  siblings: string[],
+  levels: Map<string, number>,
+): number {
+  let count = 0;
+  for (const id of siblings) {
+    if (id === nodeId) break;
+    if ((levels.get(id) ?? 0) === level) count++;
+  }
+  return count;
+}
+
+function countRowsPerLevel(levels: Map<string, number>): Map<number, number> {
+  const counts = new Map<number, number>();
+  for (const level of levels.values()) {
+    counts.set(level, (counts.get(level) ?? 0) + 1);
+  }
+  return counts;
 }
