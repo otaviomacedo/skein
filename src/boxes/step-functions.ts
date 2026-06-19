@@ -1,6 +1,8 @@
-import { StateMachine, mkStateMachine } from "../generated/stepfunctions.js";
-import { LambdaFunction } from "../generated/lambda.js";
-import { Role, mkRole, mkPolicy } from "../generated/iam.js";
+import { mkStateMachine } from "../generated/stepfunctions.js";
+import type { StateMachine } from "../generated/stepfunctions.js";
+import type { LambdaFunction } from "../generated/lambda.js";
+import { mkRole, mkPolicy } from "../generated/iam.js";
+import type { Role } from "../generated/iam.js";
 import { ref, deriveId } from "../runtime/resource.js";
 import { box } from "../runtime/box.js";
 

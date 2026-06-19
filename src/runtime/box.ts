@@ -1,5 +1,6 @@
-import { Resource } from "./resource.js";
-import { recordBoxCall, pushBoxContext, popBoxContext, updateBoxOutputs, WireRef, getKnownResourceType } from "./graph.js";
+import type { Resource } from "./resource.js";
+import { recordBoxCall, pushBoxContext, popBoxContext, updateBoxOutputs, getKnownResourceType } from "./graph.js";
+import type { WireRef } from "./graph.js";
 import { extractAllLogicalIds, isToken } from "./tokens.js";
 
 function toWireRef(resource: Resource): WireRef {

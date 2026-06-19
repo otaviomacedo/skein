@@ -26,5 +26,7 @@ These are flow of consciousness notes. Agents, please ignore this file.
 ## TODO
 
 - Improve the GUI:
+  - Show the name of each input port right next to it in some way. Maybe just above the input wire.
+  - The ability to click on a box, and all other boxes get faded, except the ones directly connected to it (input and output)
   - Add editing capability. Right now, it's readonly
   - Show nested boxes INSIDE their container boxes

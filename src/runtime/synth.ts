@@ -1,5 +1,6 @@
 import { getPatches, getDiscarded, getResourceConditions, getResourceMetadata, getExplicitDeps } from "./registry.js";
-import { mergePatchesByLogicalId, MergedResource } from "./merge.js";
+import { mergePatchesByLogicalId } from "./merge.js";
+import type { MergedResource } from "./merge.js";
 import { resolveValue } from "./tokens.js";
 import { getConditions } from "./conditions.js";
 import { getMappings } from "./mappings.js";

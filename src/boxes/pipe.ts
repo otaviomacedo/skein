@@ -1,4 +1,4 @@
-import { Resource } from "../runtime/resource.js";
+import type { Resource } from "../runtime/resource.js";
 
 type AnyFn = (...args: any[]) => any;
 

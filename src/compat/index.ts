@@ -1,7 +1,8 @@
 import { resetAll } from "../testing/index.js";
-import { synth, Template } from "../runtime/synth.js";
+import { synth } from "../runtime/synth.js";
+import type { Template } from "../runtime/synth.js";
 import { makeResource } from "../runtime/resource.js";
-import { Resource } from "../runtime/resource.js";
+import type { Resource } from "../runtime/resource.js";
 import { fixtures } from "../generated/fixtures.js";
 import { extractSchemas } from "./extract-schema.js";
 

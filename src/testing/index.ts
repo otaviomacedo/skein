@@ -7,7 +7,8 @@ import { resetOutputs } from "../runtime/outputs.js";
 import { resetStacks } from "../runtime/stacks.js";
 import { resetAssets, setAssetEnvironment } from "../runtime/assets.js";
 import { resetGraph } from "../runtime/graph.js";
-import { synth, Template, TemplateResource } from "../runtime/synth.js";
+import { synth } from "../runtime/synth.js";
+import type { Template, TemplateResource } from "../runtime/synth.js";
 
 export function resetAll(): void {
   resetTokens();

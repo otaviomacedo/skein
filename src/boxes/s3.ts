@@ -1,4 +1,4 @@
-import { Bucket } from "../generated/s3.js";
+import type { Bucket } from "../generated/s3.js";
 import { updateResource } from "../runtime/registry.js";
 import { box } from "../runtime/box.js";
 

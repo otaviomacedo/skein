@@ -1,6 +1,8 @@
-import { Topic } from "../generated/sns.js";
-import { mkSubscription, Subscription } from "../generated/sns.js";
-import { LambdaFunction, mkPermission } from "../generated/lambda.js";
+import type { Topic } from "../generated/sns.js";
+import { mkSubscription } from "../generated/sns.js";
+import type { Subscription } from "../generated/sns.js";
+import { mkPermission } from "../generated/lambda.js";
+import type { LambdaFunction } from "../generated/lambda.js";
 import { ref, deriveId } from "../runtime/resource.js";
 import { box } from "../runtime/box.js";
 

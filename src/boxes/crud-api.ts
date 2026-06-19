@@ -1,13 +1,15 @@
-import { Table } from "../generated/dynamodb.js";
-import { LambdaFunction } from "../generated/lambda.js";
-import { RestApi } from "../generated/apigateway.js";
+import type { Table } from "../generated/dynamodb.js";
+import type { LambdaFunction } from "../generated/lambda.js";
+import type { RestApi } from "../generated/apigateway.js";
 import { ref } from "../runtime/resource.js";
 import { box } from "../runtime/box.js";
 import { pipe } from "./pipe.js";
-import { mkLambda, SimpleFunctionProps } from "./lambda-helpers.js";
+import { mkLambda } from "./lambda-helpers.js";
+import type { SimpleFunctionProps } from "./lambda-helpers.js";
 import { addEnvironment } from "./lambda.js";
 import { grantTableReadWrite } from "./dynamodb.js";
-import { mkApi, HttpMethod } from "./api.js";
+import { mkApi } from "./api.js";
+import type { HttpMethod } from "./api.js";
 
 export type CrudApiProps = {
   table: Table;

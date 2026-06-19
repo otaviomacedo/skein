@@ -1,8 +1,13 @@
-import { Cluster, mkCluster, Service, mkService, TaskDefinition, mkTaskDefinition } from "../generated/ecs.js";
-import { LoadBalancer, mkLoadBalancer, TargetGroup, mkTargetGroup, Listener, mkListener } from "../generated/elasticloadbalancingv2.js";
-import { SecurityGroup, mkSecurityGroup, Subnet, VPC } from "../generated/ec2.js";
-import { LogGroup, mkLogGroup } from "../generated/logs.js";
-import { Role, mkRole } from "../generated/iam.js";
+import { mkCluster, mkService, mkTaskDefinition } from "../generated/ecs.js";
+import type { Cluster, Service, TaskDefinition } from "../generated/ecs.js";
+import { mkLoadBalancer, mkTargetGroup, mkListener } from "../generated/elasticloadbalancingv2.js";
+import type { LoadBalancer, TargetGroup, Listener } from "../generated/elasticloadbalancingv2.js";
+import { mkSecurityGroup } from "../generated/ec2.js";
+import type { SecurityGroup, Subnet, VPC } from "../generated/ec2.js";
+import { mkLogGroup } from "../generated/logs.js";
+import type { LogGroup } from "../generated/logs.js";
+import { mkRole } from "../generated/iam.js";
+import type { Role } from "../generated/iam.js";
 import { ref } from "../runtime/resource.js";
 import { addDependency } from "../runtime/registry.js";
 import { box } from "../runtime/box.js";

@@ -11,8 +11,8 @@ import { STSClient, AssumeRoleCommand, GetCallerIdentityCommand } from "@aws-sdk
 import { readFileSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { execSync } from "node:child_process";
-import { AssemblyManifest } from "./assembly.js";
-import { AssetManifestEntry } from "../runtime/assets.js";
+import type { AssemblyManifest } from "./assembly.js";
+import type { AssetManifestEntry } from "../runtime/assets.js";
 
 const DEFAULT_QUALIFIER = "hnb659fds";
 

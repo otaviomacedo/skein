@@ -1,9 +1,11 @@
-import { Distribution, getDistributionAtt, CloudFrontOriginAccessIdentity as OAI } from "../generated/cloudfront.js";
-import { Certificate } from "../generated/certificatemanager.js";
-import { Bucket, getBucketAtt } from "../generated/s3.js";
+import { getDistributionAtt } from "../generated/cloudfront.js";
+import type { Distribution, CloudFrontOriginAccessIdentity as OAI } from "../generated/cloudfront.js";
+import type { Certificate } from "../generated/certificatemanager.js";
+import { getBucketAtt } from "../generated/s3.js";
+import type { Bucket } from "../generated/s3.js";
 import { updateResource } from "../runtime/registry.js";
 import { ref, getAtt, fnJoin, deriveId, makeResource } from "../runtime/resource.js";
-import { Resource } from "../runtime/resource.js";
+import type { Resource } from "../runtime/resource.js";
 import { box } from "../runtime/box.js";
 
 export interface Route53RecordProps {

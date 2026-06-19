@@ -1,41 +1,51 @@
 // User-facing re-exports with friendly names and typed references
 
 // S3
-export { Bucket, BucketProps, mkBucket, getBucketAtt } from "../generated/s3.js";
+export { mkBucket, getBucketAtt } from "../generated/s3.js";
+export type { Bucket, BucketProps } from "../generated/s3.js";
 
 // IAM
-export { Role, RoleProps, mkRole, getRoleAtt, Policy, PolicyProps, mkPolicy } from "../generated/iam.js";
+export { mkRole, getRoleAtt, mkPolicy } from "../generated/iam.js";
+export type { Role, RoleProps, Policy, PolicyProps } from "../generated/iam.js";
 
 // Lambda (with typed role reference)
-export { Function, FunctionProps, mkFunction } from "./lambda.js";
-export { EventSourceMapping, mkEventSourceMapping } from "../generated/lambda.js";
-export { Permission, mkPermission } from "../generated/lambda.js";
+export { mkFunction } from "./lambda.js";
+export type { Function, FunctionProps } from "./lambda.js";
+export { mkEventSourceMapping } from "../generated/lambda.js";
+export type { EventSourceMapping, Permission } from "../generated/lambda.js";
+export { mkPermission } from "../generated/lambda.js";
 
 // DynamoDB
-export { Table, TableProps, mkTable, getTableAtt } from "../generated/dynamodb.js";
+export { mkTable, getTableAtt } from "../generated/dynamodb.js";
+export type { Table, TableProps } from "../generated/dynamodb.js";
 
 // SQS
-export { Queue, QueueProps, mkQueue, getQueueAtt } from "../generated/sqs.js";
+export { mkQueue, getQueueAtt } from "../generated/sqs.js";
+export type { Queue, QueueProps } from "../generated/sqs.js";
 
 // CloudFront
-export { Distribution, DistributionProps, mkDistribution, getDistributionAtt } from "../generated/cloudfront.js";
-export {
+export { mkDistribution, getDistributionAtt } from "../generated/cloudfront.js";
+export type { Distribution, DistributionProps } from "../generated/cloudfront.js";
+export { mkCloudFrontOriginAccessIdentity as mkOAI } from "../generated/cloudfront.js";
+export type {
   CloudFrontOriginAccessIdentity as OAI,
   CloudFrontOriginAccessIdentityProps as OAIProps,
-  mkCloudFrontOriginAccessIdentity as mkOAI,
 } from "../generated/cloudfront.js";
 
 // ACM
-export { Certificate, CertificateProps, mkCertificate } from "../generated/certificatemanager.js";
+export { mkCertificate } from "../generated/certificatemanager.js";
+export type { Certificate, CertificateProps } from "../generated/certificatemanager.js";
 
 // API Gateway
-export {
-  RestApi, RestApiProps, mkRestApi, getRestApiAtt,
-  ApiGatewayResource, ApiGatewayResourceProps, mkApiGatewayResource as mkApiResource,
-  Method, MethodProps, mkMethod as mkApiMethod,
-  Deployment as ApiDeployment, DeploymentProps as ApiDeploymentProps, mkDeployment as mkApiDeployment,
-  Stage as ApiStage, StageProps as ApiStageProps, mkStage as mkApiStage,
+export { mkRestApi, getRestApiAtt, mkApiGatewayResource as mkApiResource, mkMethod as mkApiMethod, mkDeployment as mkApiDeployment, mkStage as mkApiStage } from "../generated/apigateway.js";
+export type {
+  RestApi, RestApiProps,
+  ApiGatewayResource, ApiGatewayResourceProps,
+  Method, MethodProps,
+  Deployment as ApiDeployment, DeploymentProps as ApiDeploymentProps,
+  Stage as ApiStage, StageProps as ApiStageProps,
 } from "../generated/apigateway.js";
 
 // Route53
-export { RecordSet, RecordSetProps, mkRecordSet } from "../generated/route53.js";
+export { mkRecordSet } from "../generated/route53.js";
+export type { RecordSet, RecordSetProps } from "../generated/route53.js";

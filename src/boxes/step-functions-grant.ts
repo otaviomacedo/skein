@@ -1,6 +1,7 @@
-import { Function } from "../lib/lambda.js";
-import { StateMachine } from "../generated/stepfunctions.js";
-import { mkPolicy, Policy } from "../generated/iam.js";
+import type { Function } from "../lib/lambda.js";
+import type { StateMachine } from "../generated/stepfunctions.js";
+import { mkPolicy } from "../generated/iam.js";
+import type { Policy } from "../generated/iam.js";
 import { ref, deriveId } from "../runtime/resource.js";
 import { box } from "../runtime/box.js";
 

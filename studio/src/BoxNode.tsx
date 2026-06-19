@@ -1,8 +1,10 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { useState } from "react";
 
 export type BoxNodeData = {
   label: string;
   resourceIds: string[];
+  inputNames: string[];
   inputCount: number;
   outputCount: number;
   color: string;
@@ -10,21 +12,76 @@ export type BoxNodeData = {
   isComposite: boolean;
   isExpanded: boolean;
   childCount: number;
+  faded?: boolean;
 };
 
+function PortWithTooltip({
+  type,
+  position,
+  id,
+  topPercent,
+  color,
+  name,
+}: {
+  type: "source" | "target";
+  position: typeof Position.Left | typeof Position.Right;
+  id: string;
+  topPercent: number;
+  color: string;
+  name?: string;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const isLeft = position === Position.Left;
+
+  return (
+    <>
+      <Handle
+        type={type}
+        position={position}
+        id={id}
+        style={{ top: `${topPercent}%`, width: 8, height: 8, background: color }}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+      />
+      {hovered && name && (
+        <div
+          style={{
+            position: "absolute",
+            top: `${topPercent}%`,
+            [isLeft ? "left" : "right"]: -4,
+            transform: `translate(${isLeft ? "-100%" : "100%"}, -50%)`,
+            background: "#1a1a1a",
+            color: "#fff",
+            fontSize: 9,
+            padding: "2px 6px",
+            borderRadius: 3,
+            whiteSpace: "nowrap",
+            pointerEvents: "none",
+            zIndex: 100,
+          }}
+        >
+          {name}
+        </div>
+      )}
+    </>
+  );
+}
+
 export function BoxNode({ data, selected }: NodeProps) {
-  const { label, resourceIds, inputCount, outputCount, color, isGenerator, isComposite, isExpanded, childCount } =
+  const { label, resourceIds, inputNames, inputCount, outputCount, color, isGenerator, isComposite, isExpanded, childCount, faded } =
     data as unknown as BoxNodeData;
 
   const inputHandles = Array.from({ length: inputCount }, (_, i) => {
     const position = inputCount === 1 ? 50 : 20 + (i * 60) / Math.max(inputCount - 1, 1);
     return (
-      <Handle
+      <PortWithTooltip
         key={`in-${i}`}
         type="target"
         position={Position.Left}
         id={`in-${i}`}
-        style={{ top: `${position}%`, width: 8, height: 8, background: "#555" }}
+        topPercent={position}
+        color="#555"
+        name={inputNames[i]}
       />
     );
   });
@@ -32,12 +89,14 @@ export function BoxNode({ data, selected }: NodeProps) {
   const outputHandles = Array.from({ length: outputCount }, (_, i) => {
     const position = outputCount === 1 ? 50 : 20 + (i * 60) / Math.max(outputCount - 1, 1);
     return (
-      <Handle
+      <PortWithTooltip
         key={`out-${i}`}
         type="source"
         position={Position.Right}
         id={`out-${i}`}
-        style={{ top: `${position}%`, width: 8, height: 8, background: color }}
+        topPercent={position}
+        color={color}
+        name={resourceIds[i]}
       />
     );
   });
@@ -49,6 +108,7 @@ export function BoxNode({ data, selected }: NodeProps) {
   return (
     <div
       style={{
+        position: "relative",
         background: "#fff",
         border: `${borderWidth}px ${borderStyle} ${color}`,
         borderRadius: isComposite ? 12 : 8,
@@ -58,7 +118,8 @@ export function BoxNode({ data, selected }: NodeProps) {
         fontFamily: "'Inter', system-ui, sans-serif",
         fontSize: 11,
         boxShadow: shadow,
-        transition: "box-shadow 0.15s",
+        transition: "box-shadow 0.15s, opacity 0.2s",
+        opacity: faded ? 0.2 : 1,
       }}
     >
       {inputHandles}

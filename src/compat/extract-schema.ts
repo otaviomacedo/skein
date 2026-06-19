@@ -12,7 +12,7 @@
  */
 
 import ts from "typescript";
-import { InputKind, BoxSchema } from "./index.js";
+import type { InputKind, BoxSchema } from "./index.js";
 
 export type ExtractedSchema = {
   boxName: string;

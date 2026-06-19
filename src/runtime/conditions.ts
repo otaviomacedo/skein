@@ -1,4 +1,4 @@
-import { Resource } from "./resource.js";
+import type { Resource } from "./resource.js";
 
 export type Condition = {
   readonly __kind: "condition";

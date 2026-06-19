@@ -1,6 +1,8 @@
-import { Function } from "../lib/lambda.js";
-import { Rule, mkRule } from "../generated/events.js";
-import { Permission, mkPermission } from "../generated/lambda.js";
+import type { Function } from "../lib/lambda.js";
+import { mkRule } from "../generated/events.js";
+import type { Rule } from "../generated/events.js";
+import { mkPermission } from "../generated/lambda.js";
+import type { Permission } from "../generated/lambda.js";
 import { ref, deriveId } from "../runtime/resource.js";
 import { box } from "../runtime/box.js";
 

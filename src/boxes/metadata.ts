@@ -1,4 +1,4 @@
-import { Resource } from "../runtime/resource.js";
+import type { Resource } from "../runtime/resource.js";
 import { setMetadata } from "../runtime/registry.js";
 
 export function addMetadata<T extends Resource>(resource: T, metadata: Record<string, unknown>): T {

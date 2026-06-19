@@ -1,13 +1,22 @@
 import {
-  VPC, mkVPC,
-  Subnet, mkSubnet,
-  InternetGateway, mkInternetGateway,
-  NatGateway, mkNatGateway,
-  EIP, mkEIP,
-  RouteTable, mkRouteTable,
-  Route, mkRoute,
+  mkVPC,
+  mkSubnet,
+  mkInternetGateway,
+  mkNatGateway,
+  mkEIP,
+  mkRouteTable,
+  mkRoute,
   mkVPCGatewayAttachment,
   mkSubnetRouteTableAssociation,
+} from "../generated/ec2.js";
+import type {
+  VPC,
+  Subnet,
+  InternetGateway,
+  NatGateway,
+  EIP,
+  RouteTable,
+  Route,
 } from "../generated/ec2.js";
 import { ref } from "../runtime/resource.js";
 import { box } from "../runtime/box.js";

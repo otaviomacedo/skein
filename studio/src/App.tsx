@@ -21,12 +21,23 @@ import { DetailPanel } from "./DetailPanel";
 
 const nodeTypes = { box: BoxNode };
 
+function getConnectedNodeIds(selectedId: string | null, edges: Edge[]): Set<string> | null {
+  if (!selectedId) return null;
+  const connected = new Set<string>([selectedId]);
+  for (const edge of edges) {
+    if (edge.source === selectedId) connected.add(edge.target);
+    if (edge.target === selectedId) connected.add(edge.source);
+  }
+  return connected;
+}
+
 function App() {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [graph, setGraph] = useState<GraphIR | null>(null);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [selectedNode, setSelectedNode] = useState<BoxCall | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<{ nodes: number; edges: number; resources: number } | null>(null);
 
@@ -41,6 +52,26 @@ function App() {
       setEdges(flowEdges);
     }
   }, [graph, expandedNodes]);
+
+  // Apply fading when selection changes (without rebuilding the graph)
+  useEffect(() => {
+    setEdges((currentEdges) => {
+      const highlightedIds = getConnectedNodeIds(selectedNodeId, currentEdges);
+      setNodes((currentNodes) =>
+        currentNodes.map((n) => ({
+          ...n,
+          data: { ...n.data, faded: highlightedIds !== null && !highlightedIds.has(n.id) },
+        })),
+      );
+      return currentEdges.map((e) => ({
+        ...e,
+        style: {
+          ...e.style,
+          opacity: highlightedIds !== null && !(highlightedIds.has(e.source) && highlightedIds.has(e.target)) ? 0.15 : 1,
+        },
+      }));
+    });
+  }, [selectedNodeId]);
 
   async function loadGraph() {
     try {
@@ -65,9 +96,11 @@ function App() {
     ({ nodes: selectedNodes }: OnSelectionChangeParams) => {
       if (selectedNodes.length === 1 && graph) {
         const nodeId = selectedNodes[0].id;
+        setSelectedNodeId(nodeId);
         const boxCall = graph.nodes.find((n) => n.id === nodeId) ?? null;
         setSelectedNode(boxCall);
       } else {
+        setSelectedNodeId(null);
         setSelectedNode(null);
       }
     },

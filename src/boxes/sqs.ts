@@ -1,7 +1,9 @@
-import { Function } from "../lib/lambda.js";
-import { Queue } from "../generated/sqs.js";
-import { Policy, mkPolicy, Role } from "../generated/iam.js";
-import { EventSourceMapping, mkEventSourceMapping } from "../generated/lambda.js";
+import type { Function } from "../lib/lambda.js";
+import type { Queue } from "../generated/sqs.js";
+import { mkPolicy } from "../generated/iam.js";
+import type { Policy, Role } from "../generated/iam.js";
+import { mkEventSourceMapping } from "../generated/lambda.js";
+import type { EventSourceMapping } from "../generated/lambda.js";
 import { deriveId, ref } from "../runtime/resource.js";
 import { updateResource, addDependency } from "../runtime/registry.js";
 import { box } from "../runtime/box.js";

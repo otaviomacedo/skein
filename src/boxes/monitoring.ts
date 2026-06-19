@@ -1,5 +1,6 @@
-import { Alarm, AlarmProps, mkAlarm } from "../generated/cloudwatch.js";
-import { Topic } from "../generated/sns.js";
+import { mkAlarm } from "../generated/cloudwatch.js";
+import type { Alarm, AlarmProps } from "../generated/cloudwatch.js";
+import type { Topic } from "../generated/sns.js";
 import { updateResource } from "../runtime/registry.js";
 import { box } from "../runtime/box.js";
 

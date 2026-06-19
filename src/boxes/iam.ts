@@ -1,6 +1,8 @@
-import { Function } from "../lib/lambda.js";
-import { Bucket, getBucketAtt } from "../generated/s3.js";
-import { Policy, mkPolicy, Role } from "../generated/iam.js";
+import type { Function } from "../lib/lambda.js";
+import { getBucketAtt } from "../generated/s3.js";
+import type { Bucket } from "../generated/s3.js";
+import { mkPolicy } from "../generated/iam.js";
+import type { Policy, Role } from "../generated/iam.js";
 import { ref, deriveId } from "../runtime/resource.js";
 import { updateResource } from "../runtime/registry.js";
 import { box } from "../runtime/box.js";

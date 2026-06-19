@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { Template, SynthOutput } from "../runtime/synth.js";
-import { AssetManifest } from "../runtime/assets.js";
+import type { Template, SynthOutput } from "../runtime/synth.js";
+import type { AssetManifest } from "../runtime/assets.js";
 
 export type AssemblyManifest = {
   version: string;

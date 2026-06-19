@@ -2,7 +2,8 @@
 
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
-import { writeSingleTemplate, writeAssembly, readAssemblyManifest, readTemplate, AssemblyConfig } from "./assembly.js";
+import { writeSingleTemplate, writeAssembly, readAssemblyManifest, readTemplate } from "./assembly.js";
+import type { AssemblyConfig } from "./assembly.js";
 import { diffTemplates, formatDiff } from "./diff.js";
 import { deploy } from "./deploy.js";
 import { synth, synthMulti } from "../runtime/synth.js";

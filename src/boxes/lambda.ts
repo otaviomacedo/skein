@@ -1,4 +1,4 @@
-import { Function } from "../lib/lambda.js";
+import type { Function } from "../lib/lambda.js";
 import { updateResource } from "../runtime/registry.js";
 import { box } from "../runtime/box.js";
 

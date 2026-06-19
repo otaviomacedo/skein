@@ -1,6 +1,7 @@
-import { mkRestApi, mkApiGatewayResource, mkMethod, mkDeployment, mkStage, RestApi, ApiGatewayResource } from "../generated/apigateway.js";
+import { mkRestApi, mkApiGatewayResource, mkMethod, mkDeployment, mkStage } from "../generated/apigateway.js";
+import type { RestApi, ApiGatewayResource } from "../generated/apigateway.js";
 import { mkPermission } from "../generated/lambda.js";
-import { LambdaFunction } from "../generated/lambda.js";
+import type { LambdaFunction } from "../generated/lambda.js";
 import { ref, fnJoin, fnSub, deriveId, makeResource } from "../runtime/resource.js";
 import { addDependency } from "../runtime/registry.js";
 import { box } from "../runtime/box.js";

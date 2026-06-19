@@ -1,5 +1,6 @@
 import { mkRole } from "../generated/iam.js";
-import { mkLambdaFunction, LambdaFunction, LambdaFunctionProps } from "../generated/lambda.js";
+import { mkLambdaFunction } from "../generated/lambda.js";
+import type { LambdaFunction, LambdaFunctionProps } from "../generated/lambda.js";
 import { box } from "../runtime/box.js";
 
 export type SimpleFunctionProps = Omit<LambdaFunctionProps, "role"> & {

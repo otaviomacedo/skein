@@ -1,4 +1,4 @@
-import { Template } from "../runtime/synth.js";
+import type { Template } from "../runtime/synth.js";
 
 export type DiffEntry = {
   type: "added" | "removed" | "modified";

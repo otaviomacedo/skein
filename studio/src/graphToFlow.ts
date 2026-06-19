@@ -76,6 +76,7 @@ export function graphToFlow(
     const nodeData: BoxNodeData = {
       label: node.box,
       resourceIds,
+      inputNames: node.inputs.map((i) => i.resourceId),
       inputCount: node.inputs.length,
       outputCount: node.outputs.length,
       color,
@@ -93,11 +94,11 @@ export function graphToFlow(
     });
   }
 
-  // Edges: render promoted edges (deduplicated, no self-loops)
+  // Edges: render promoted edges (deduplicated per source-target pair, no self-loops)
   const edgeSeen = new Set<string>();
   for (const edge of promotedEdges) {
     if (edge.from === edge.to) continue;
-    const key = `${edge.from}-${edge.to}`;
+    const key = `${edge.from}-${edge.output}-${edge.to}-${edge.input}`;
     if (edgeSeen.has(key)) continue;
     edgeSeen.add(key);
 
@@ -115,9 +116,6 @@ export function graphToFlow(
       animated: false,
       style: { stroke: color, strokeWidth: 2 },
       markerEnd: { type: MarkerType.ArrowClosed, color, width: 12, height: 12 },
-      label: output ? shortType(output.type) : undefined,
-      labelStyle: { fontSize: 9, fill: "#666" },
-      labelBgStyle: { fill: "#fff", fillOpacity: 0.8 },
     });
   }
 

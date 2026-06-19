@@ -1,12 +1,12 @@
-import { Function } from "../lib/lambda.js";
-import { Bucket } from "../generated/s3.js";
-import { Table } from "../generated/dynamodb.js";
-import { Queue } from "../generated/sqs.js";
-import { Policy } from "../generated/iam.js";
+import type { Function } from "../lib/lambda.js";
+import type { Bucket } from "../generated/s3.js";
+import type { Table } from "../generated/dynamodb.js";
+import type { Queue } from "../generated/sqs.js";
+import type { Policy } from "../generated/iam.js";
 import { grantRead, grantWrite, grantReadWrite } from "./iam.js";
 import { grantTableRead, grantTableReadWrite } from "./dynamodb.js";
 import { grantSendMessage, triggerFromQueue } from "./sqs.js";
-import { EventSourceMapping } from "../generated/lambda.js";
+import type { EventSourceMapping } from "../generated/lambda.js";
 
 type GrantChain = {
   fn: Function;

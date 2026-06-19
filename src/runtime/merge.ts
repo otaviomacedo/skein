@@ -1,4 +1,4 @@
-import { Patch } from "./registry.js";
+import type { Patch } from "./registry.js";
 import { ConflictError } from "./errors.js";
 
 export { ConflictError };

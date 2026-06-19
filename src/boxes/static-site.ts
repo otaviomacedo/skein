@@ -1,6 +1,9 @@
-import { Bucket, mkBucket } from "../generated/s3.js";
-import { Distribution, DistributionProps, mkDistribution, mkCloudFrontOriginAccessIdentity } from "../generated/cloudfront.js";
-import { Certificate, mkCertificate } from "../generated/certificatemanager.js";
+import { mkBucket } from "../generated/s3.js";
+import type { Bucket } from "../generated/s3.js";
+import { mkDistribution, mkCloudFrontOriginAccessIdentity } from "../generated/cloudfront.js";
+import type { Distribution, DistributionProps } from "../generated/cloudfront.js";
+import { mkCertificate } from "../generated/certificatemanager.js";
+import type { Certificate } from "../generated/certificatemanager.js";
 import { pipe } from "./pipe.js";
 import { encrypt, blockPublicAccess, enableWebHosting, enableLogDelivery } from "./s3.js";
 import { setOrigin, enableAccessLogging, attachCert, addAliasRecord } from "./cloudfront.js";
