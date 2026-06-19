@@ -9,8 +9,11 @@ import {
   useEdgesState,
   useReactFlow,
   ReactFlowProvider,
+  addEdge,
+  MarkerType,
   type Node,
   type Edge,
+  type Connection,
   type OnSelectionChangeParams,
   type NodeMouseHandler,
   BackgroundVariant,
@@ -21,6 +24,8 @@ import { graphToFlow } from "./graphToFlow";
 import { BoxNode } from "./BoxNode";
 import { GroupNode } from "./GroupNode";
 import { DetailPanel } from "./DetailPanel";
+import { LibraryPanel } from "./LibraryPanel";
+import { generateCode } from "./codegen";
 
 const nodeTypes = { box: BoxNode, group: GroupNode };
 
@@ -43,6 +48,7 @@ function App() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<{ nodes: number; edges: number; resources: number } | null>(null);
+  const [generatedCode, setGeneratedCode] = useState<string | null>(null);
 
   useEffect(() => {
     loadGraph();
@@ -110,7 +116,7 @@ function App() {
     [graph],
   );
 
-  const { fitView } = useReactFlow();
+  const { fitView, screenToFlowPosition } = useReactFlow();
   const pendingFocusNode = useRef<string | null>(null);
 
   const onNodeDoubleClick: NodeMouseHandler = useCallback(
@@ -163,6 +169,101 @@ function App() {
     return () => document.removeEventListener("click", handleClick);
   }, []);
 
+  // Wire connections
+  const isValidConnection = useCallback(
+    (connection: Edge | Connection) => {
+      if (!connection.target || !connection.targetHandle) return false;
+      // Check if the target port already has a connection (unless it's an array input)
+      const targetNode = nodes.find((n) => n.id === connection.target);
+      if (!targetNode) return false;
+      const arrayInputs: number[] = (targetNode.data as any).arrayInputs ?? [];
+      const portIndex = parseInt(connection.targetHandle?.replace("in-", "") ?? "0");
+      if (arrayInputs.includes(portIndex)) return true; // Array inputs accept multiple
+      // Non-array: check if already connected
+      const existing = edges.find(
+        (e) => e.target === connection.target && e.targetHandle === connection.targetHandle,
+      );
+      return !existing;
+    },
+    [nodes, edges],
+  );
+
+  const onConnect = useCallback(
+    (connection: Connection) => {
+      const edge: Edge = {
+        id: `${connection.source}-${connection.sourceHandle}-${connection.target}-${connection.targetHandle}-${Date.now()}`,
+        source: connection.source!,
+        sourceHandle: connection.sourceHandle,
+        target: connection.target!,
+        targetHandle: connection.targetHandle,
+        type: "smoothstep",
+        style: { stroke: "#6B7280", strokeWidth: 2 },
+        markerEnd: { type: MarkerType.ArrowClosed, color: "#6B7280", width: 12, height: 12 },
+      };
+      setEdges((eds) => addEdge(edge, eds));
+    },
+    [],
+  );
+
+  // Delete selected nodes/edges on Backspace/Delete
+  const onKeyDown = useCallback(
+    (event: React.KeyboardEvent) => {
+      if (event.key === "Backspace" || event.key === "Delete") {
+        setNodes((nds) => nds.filter((n) => !n.selected));
+        setEdges((eds) => {
+          const selectedNodeIds = new Set(
+            nodes.filter((n) => n.selected).map((n) => n.id),
+          );
+          return eds.filter(
+            (e) => !e.selected && !selectedNodeIds.has(e.source) && !selectedNodeIds.has(e.target),
+          );
+        });
+      }
+    },
+    [nodes],
+  );
+
+  const onDragOver = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  }, []);
+
+  const onDrop = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault();
+      const data = event.dataTransfer.getData("application/skein-box");
+      if (!data) return;
+
+      const box = JSON.parse(data);
+      const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+
+      const newNode: Node = {
+        id: `draft-${Date.now()}`,
+        position,
+        data: {
+          label: box.name,
+          logicalId: undefined,
+          resourceIds: box.outputs,
+          inputNames: box.paramNames ?? box.inputs,
+          inputCount: box.inputs.length,
+          outputCount: box.outputs.length,
+          color: "#6B7280",
+          isGenerator: box.inputs.length === 0,
+          isComposite: false,
+          isExpanded: false,
+          childCount: 0,
+          faded: false,
+          paramNames: box.paramNames,
+          arrayInputs: box.arrayInputs,
+        },
+        type: "box",
+      };
+
+      setNodes((prev) => [...prev, newNode]);
+    },
+    [],
+  );
+
   const collapseAll = useCallback(() => setExpandedNodes(new Set()), []);
   const expandAll = useCallback(() => {
     if (!graph) return;
@@ -183,19 +284,28 @@ function App() {
 
   return (
     <div style={{ width: "100%", height: "100%", position: "relative" }}>
+      <LibraryPanel />
+      <div style={{ position: "absolute", top: 0, left: 260, right: 0, bottom: 0 }}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
+        isValidConnection={isValidConnection}
         onSelectionChange={onSelectionChange}
         onNodeDoubleClick={onNodeDoubleClick}
+        onDragOver={onDragOver}
+        onDrop={onDrop}
+        onKeyDown={onKeyDown}
         nodeTypes={nodeTypes}
         fitView
         fitViewOptions={{ padding: 0.2 }}
         minZoom={0.2}
         maxZoom={2}
+        deleteKeyCode={null}
         defaultEdgeOptions={{ type: "smoothstep" }}
+        tabIndex={0}
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#e5e7eb" />
         <Controls showInteractive={false} />
@@ -236,10 +346,54 @@ function App() {
             >
               Collapse all
             </button>
+            <button
+              onClick={() => setGeneratedCode(generateCode(nodes, edges))}
+              style={{ border: "1px solid #4f46e5", background: "#eef2ff", color: "#4f46e5", borderRadius: 4, padding: "3px 8px", cursor: "pointer", fontSize: 11, fontWeight: 600 }}
+            >
+              Generate Code
+            </button>
           </div>
         </Panel>
       </ReactFlow>
+      </div>
       <DetailPanel node={selectedNode} onClose={() => setSelectedNode(null)} />
+      {generatedCode && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: 0,
+            left: 260,
+            right: 0,
+            maxHeight: "40%",
+            background: "#1e1e1e",
+            color: "#d4d4d4",
+            fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+            fontSize: 12,
+            overflow: "auto",
+            zIndex: 20,
+            borderTop: "2px solid #4f46e5",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 16px", background: "#2d2d2d", borderBottom: "1px solid #3d3d3d" }}>
+            <span style={{ fontWeight: 600, fontSize: 11, fontFamily: "'Inter', system-ui, sans-serif" }}>Generated Code</span>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={() => navigator.clipboard.writeText(generatedCode)}
+                style={{ border: "1px solid #555", background: "#3d3d3d", color: "#d4d4d4", borderRadius: 3, padding: "2px 8px", cursor: "pointer", fontSize: 10 }}
+              >
+                Copy
+              </button>
+              <button
+                onClick={() => setGeneratedCode(null)}
+                style={{ border: "1px solid #555", background: "#3d3d3d", color: "#d4d4d4", borderRadius: 3, padding: "2px 8px", cursor: "pointer", fontSize: 10 }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+          <pre style={{ margin: 0, padding: 16, whiteSpace: "pre-wrap" }}>{generatedCode}</pre>
+        </div>
+      )}
     </div>
   );
 }
