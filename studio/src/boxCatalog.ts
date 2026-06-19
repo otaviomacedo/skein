@@ -8,6 +8,8 @@ export type CatalogBox = {
   paramNames?: string[];
   /** Which input indices accept arrays (multiple connections) */
   arrayInputs?: number[];
+  /** Default template for configurable (non-resource) properties */
+  configTemplate?: Record<string, unknown>;
 };
 
 export type CatalogSection = {
@@ -25,10 +27,10 @@ export const catalog: CatalogSection[] = [
   {
     source: "Patterns",
     boxes: [
-      { name: "crudApi", category: "API", description: "REST API + Lambda + DynamoDB table grants", inputs: ["Table", "props"], outputs: ["handler", "restApi"], paramNames: ["table", "props"] },
-      { name: "vpc", category: "Networking", description: "VPC with public/private subnets, IGW, NAT", inputs: ["props"], outputs: ["vpc", "publicSubnets", "privateSubnets"] },
-      { name: "fargateService", category: "Containers", description: "Fargate service behind an ALB", inputs: ["VPC", "Subnets", "Subnets", "props"], outputs: ["cluster", "service", "alb"], paramNames: ["vpc", "subnets", "albSubnets", "container"] },
-      { name: "stepFunctionsPipeline", category: "Workflows", description: "Step Functions state machine from step definitions", inputs: ["props"], outputs: ["stateMachine", "role"] },
+      { name: "crudApi", category: "API", description: "REST API + Lambda + DynamoDB table grants", inputs: ["Table", "props"], outputs: ["handler", "restApi"], paramNames: ["table", "props"], configTemplate: { routes: { "/items": ["GET", "POST"], "/items/{id}": ["GET", "PUT", "DELETE"] }, functionProps: { runtime: "nodejs20.x", handler: "index.handler", code: { s3Bucket: "", s3Key: "" } }, description: "" } },
+      { name: "vpc", category: "Networking", description: "VPC with public/private subnets, IGW, NAT", inputs: ["props"], outputs: ["vpc", "publicSubnets", "privateSubnets"], configTemplate: { cidrBlock: "10.0.0.0/16", availabilityZones: ["us-east-1a", "us-east-1b"], publicSubnetCidrs: ["10.0.1.0/24", "10.0.2.0/24"], privateSubnetCidrs: ["10.0.10.0/24", "10.0.11.0/24"] } },
+      { name: "fargateService", category: "Containers", description: "Fargate service behind an ALB", inputs: ["VPC", "Subnets", "Subnets", "props"], outputs: ["cluster", "service", "alb"], paramNames: ["vpc", "subnets", "albSubnets", "container"], configTemplate: { image: "", port: 80, desiredCount: 2, cpu: "256", memory: "512" } },
+      { name: "stepFunctionsPipeline", category: "Workflows", description: "Step Functions state machine from step definitions", inputs: ["props"], outputs: ["stateMachine", "role"], configTemplate: { steps: [], type: "STANDARD" } },
       { name: "snsFanout", category: "Messaging", description: "Subscribe multiple Lambdas to an SNS topic", inputs: ["Topic", "Function[]"], outputs: ["subscriptions"], paramNames: ["topic", "handlers"], arrayInputs: [1] },
       { name: "scheduledProcessor", category: "Compute", description: "Lambda on a schedule with table + queue", inputs: ["Table", "Queue", "props"], outputs: ["Function"], paramNames: ["table", "failureQueue", "functionProps"] },
       { name: "queueProcessor", category: "Compute", description: "Lambda triggered from SQS with table access", inputs: ["Table", "Queue", "props"], outputs: ["Function"], paramNames: ["table", "queue", "functionProps"] },

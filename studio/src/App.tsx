@@ -24,6 +24,7 @@ import { graphToFlow } from "./graphToFlow";
 import { BoxNode } from "./BoxNode";
 import { GroupNode } from "./GroupNode";
 import { DetailPanel } from "./DetailPanel";
+import { PropertiesPanel } from "./PropertiesPanel";
 import { LibraryPanel } from "./LibraryPanel";
 import { generateCode } from "./codegen";
 
@@ -101,19 +102,37 @@ function App() {
     }
   }
 
+  const [selectedFlowNode, setSelectedFlowNode] = useState<Node | null>(null);
+
   const onSelectionChange = useCallback(
     ({ nodes: selectedNodes }: OnSelectionChangeParams) => {
-      if (selectedNodes.length === 1 && graph) {
+      if (selectedNodes.length === 1) {
         const nodeId = selectedNodes[0].id;
         setSelectedNodeId(nodeId);
-        const boxCall = graph.nodes.find((n) => n.id === nodeId) ?? null;
+        const boxCall = graph ? (graph.nodes.find((n) => n.id === nodeId) ?? null) : null;
         setSelectedNode(boxCall);
+        setSelectedFlowNode(selectedNodes[0]);
       } else {
         setSelectedNodeId(null);
         setSelectedNode(null);
+        setSelectedFlowNode(null);
       }
     },
     [graph],
+  );
+
+  const onConfigUpdate = useCallback(
+    (nodeId: string, config: Record<string, unknown>) => {
+      setNodes((nds) =>
+        nds.map((n) => {
+          if (n.id !== nodeId) return n;
+          const logicalId = typeof config.logicalId === "string" ? config.logicalId : undefined;
+          const newData = { ...n.data, config, logicalId: logicalId || (n.data as any).logicalId };
+          return { ...n, data: newData };
+        }),
+      );
+    },
+    [],
   );
 
   const { fitView, screenToFlowPosition } = useReactFlow();
@@ -356,7 +375,11 @@ function App() {
         </Panel>
       </ReactFlow>
       </div>
-      <DetailPanel node={selectedNode} onClose={() => setSelectedNode(null)} />
+      <PropertiesPanel
+        node={selectedNodeId ? nodes.find((n) => n.id === selectedNodeId) ?? null : null}
+        onUpdate={onConfigUpdate}
+        onClose={() => { setSelectedFlowNode(null); setSelectedNode(null); setSelectedNodeId(null); }}
+      />
       {generatedCode && (
         <div
           style={{

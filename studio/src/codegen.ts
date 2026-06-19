@@ -83,41 +83,62 @@ export function generateCode(nodes: Node[], edges: Edge[]): string {
     const outputEdges = edges.filter((e) => e.source === node.id);
     const isUsedDownstream = outputEdges.length > 0;
 
+    // Get user-configured values
+    const config: Record<string, unknown> = (data as any).config ?? {};
+    const logicalId = (config.logicalId as string) || data.logicalId || data.label;
+    const hasConfig = Object.keys(config).some((k) => k !== "logicalId");
+
     if (data.isGenerator && data.inputCount === 0) {
-      // Constructor: no inputs
-      const logicalId = data.logicalId ?? data.label;
+      // Constructor: no inputs, just config
+      const propsStr = serializeConfig(config, ["logicalId"]);
       if (isUsedDownstream) {
-        lines.push(`const ${varName} = ${data.label}("${logicalId}", { /* props */ });`);
+        lines.push(`const ${varName} = ${data.label}("${logicalId}", ${propsStr || "{ /* props */ }"});`);
       } else {
-        lines.push(`${data.label}("${logicalId}", { /* props */ });`);
+        lines.push(`${data.label}("${logicalId}", ${propsStr || "{ /* props */ }"});`);
       }
-    } else if (data.inputCount === 1 && data.outputCount === 1 && !data.logicalId) {
-      // Single-input single-output transformer
+    } else if (data.inputCount === 1 && data.outputCount === 1 && !data.logicalId && !hasConfig) {
+      // Single-input single-output transformer (no config)
       if (isUsedDownstream) {
         lines.push(`const ${varName} = ${data.label}(${args[0]});`);
       } else {
         lines.push(`${data.label}(${args[0]});`);
       }
-    } else if (args.some((a) => !a.startsWith("/*"))) {
-      // Has connected inputs
-      if (data.logicalId) {
-        // Named pattern box: use object syntax with param names
-        const propsEntries = args.map((v, i) => `${paramNames[i] ?? `arg${i}`}: ${v}`).join(", ");
-        if (isUsedDownstream) {
-          lines.push(`const { ${data.resourceIds?.slice(0, 2).map((r) => toVarName(r, new Map())).join(", ") || varName} } = ${data.label}("${data.logicalId}", { ${propsEntries} });`);
-        } else {
-          lines.push(`${data.label}("${data.logicalId}", { ${propsEntries} });`);
-        }
-      } else {
-        // Positional arguments
-        if (isUsedDownstream) {
-          lines.push(`const ${varName} = ${data.label}(${args.join(", ")});`);
-        } else {
-          lines.push(`${data.label}(${args.join(", ")});`);
+    } else if (data.logicalId || config.logicalId || hasConfig) {
+      // Named pattern box or box with config: use object syntax
+      // Combine wire args and config into a single props object
+      const propsObj: Record<string, string> = {};
+
+      // Add wire connections (resource inputs only)
+      const catalogInputs = catalogEntry?.inputs ?? [];
+      for (let i = 0; i < args.length; i++) {
+        const inputType = catalogInputs[i];
+        if (inputType && RESOURCE_TYPES.has(inputType)) {
+          propsObj[paramNames[i] ?? `arg${i}`] = args[i];
         }
       }
+
+      // Add config values
+      const configStr = serializeConfig(config, ["logicalId"]);
+
+      // Build the final props string
+      const wireStr = Object.entries(propsObj).map(([k, v]) => `${k}: ${v}`).join(", ");
+      const allProps = [wireStr, configStr ? `...${configStr}` : ""].filter(Boolean).join(", ");
+
+      if (isUsedDownstream) {
+        const destructured = data.resourceIds?.slice(0, 2).map((r) => toVarName(r, new Map())).join(", ");
+        lines.push(`const { ${destructured || varName} } = ${data.label}("${logicalId}", { ${allProps || "/* props */"} });`);
+      } else {
+        lines.push(`${data.label}("${logicalId}", { ${allProps || "/* props */"} });`);
+      }
+    } else if (args.some((a) => !a.startsWith("/*"))) {
+      // Positional arguments (no config, no logicalId)
+      if (isUsedDownstream) {
+        lines.push(`const ${varName} = ${data.label}(${args.join(", ")});`);
+      } else {
+        lines.push(`${data.label}(${args.join(", ")});`);
+      }
     } else {
-      // No inputs connected yet
+      // Nothing connected or configured
       if (isUsedDownstream) {
         lines.push(`const ${varName} = ${data.label}(/* connect inputs */);`);
       } else {
@@ -127,6 +148,42 @@ export function generateCode(nodes: Node[], edges: Edge[]): string {
   }
 
   return lines.join("\n");
+}
+
+const RESOURCE_TYPES = new Set([
+  "Table", "Queue", "Topic", "Function", "Function[]", "VPC",
+  "Subnets", "Subnet", "Bucket", "StateMachine", "Alarm", "Asset",
+]);
+
+function serializeConfig(config: Record<string, unknown>, exclude: string[]): string {
+  const excludeSet = new Set(exclude);
+  const filtered: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(config)) {
+    if (excludeSet.has(k)) continue;
+    if (v === "" || v === null || v === undefined) continue;
+    filtered[k] = v;
+  }
+  if (Object.keys(filtered).length === 0) return "";
+  return serializeValue(filtered);
+}
+
+function serializeValue(value: unknown): string {
+  if (value === null || value === undefined) return "null";
+  if (typeof value === "string") return `"${value}"`;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "[]";
+    const items = value.map(serializeValue);
+    return `[${items.join(", ")}]`;
+  }
+  if (typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, v]) => v !== "" && v !== null && v !== undefined)
+      .map(([k, v]) => `${k}: ${serializeValue(v)}`);
+    if (entries.length === 0) return "{}";
+    return `{ ${entries.join(", ")} }`;
+  }
+  return String(value);
 }
 
 function toVarName(name: string, existing: Map<string, string>): string {
