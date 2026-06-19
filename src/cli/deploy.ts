@@ -89,6 +89,12 @@ export async function deploy(config: DeployConfig): Promise<void> {
   const deployCreds = await assumeRole(sts, ctx.deployRoleArn, "skein-deploy");
   const cfn = new CloudFormationClient({ region, credentials: deployCreds });
 
+  // Use file publishing role for template uploads (deploy role lacks S3 write)
+  const s3Creds = fileAssets.length > 0
+    ? await assumeRole(sts, ctx.filePublishingRoleArn, "skein-file-publish")
+    : await assumeRole(sts, ctx.filePublishingRoleArn, "skein-template-upload");
+  const templateS3 = new S3Client({ region, credentials: s3Creds });
+
   const order = topologicalSort(manifest.stacks);
   console.log(`\nDeploying ${order.length} stack(s): ${order.join(" → ")}`);
 
@@ -97,7 +103,7 @@ export async function deploy(config: DeployConfig): Promise<void> {
     const templatePath = join(outDir, stackDef.template);
     const templateBody = readFileSync(templatePath, "utf-8");
 
-    await deployStack(cfn, stackName, templateBody, ctx.cfnExecRoleArn);
+    await deployStack(cfn, stackName, templateBody, ctx.cfnExecRoleArn, templateS3, ctx.bucket);
   }
 
   console.log("\n✓ Deploy complete.");
@@ -303,13 +309,32 @@ function extOf(path: string): string {
 
 // === Stack deployment ===
 
+const MAX_TEMPLATE_BODY_SIZE = 51200;
+
 async function deployStack(
   cfn: CloudFormationClient,
   stackName: string,
   templateBody: string,
   cfnExecRoleArn: string,
+  s3?: S3Client,
+  bucket?: string,
 ): Promise<void> {
   const existing = await getStackStatus(cfn, stackName);
+
+  // If template exceeds CloudFormation's inline limit, upload to S3
+  let templateParam: { TemplateBody: string } | { TemplateURL: string };
+  if (Buffer.byteLength(templateBody, "utf-8") > MAX_TEMPLATE_BODY_SIZE) {
+    if (!s3 || !bucket) {
+      throw new Error(`Template for ${stackName} exceeds 51200 bytes but no S3 client available for upload.`);
+    }
+    const key = `templates/${stackName}-${Date.now()}.json`;
+    await s3.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: templateBody }));
+    const url = `https://${bucket}.s3.amazonaws.com/${key}`;
+    console.log(`  (template uploaded to s3://${bucket}/${key})`);
+    templateParam = { TemplateURL: url };
+  } else {
+    templateParam = { TemplateBody: templateBody };
+  }
 
   console.log(`\n  Stack: ${stackName}`);
 
@@ -317,7 +342,7 @@ async function deployStack(
     console.log("  Creating...");
     await cfn.send(new CreateStackCommand({
       StackName: stackName,
-      TemplateBody: templateBody,
+      ...templateParam,
       RoleARN: cfnExecRoleArn,
       Capabilities: ["CAPABILITY_IAM", "CAPABILITY_NAMED_IAM", "CAPABILITY_AUTO_EXPAND"],
     }));
@@ -330,7 +355,7 @@ async function deployStack(
     try {
       await cfn.send(new UpdateStackCommand({
         StackName: stackName,
-        TemplateBody: templateBody,
+        ...templateParam,
         RoleARN: cfnExecRoleArn,
         Capabilities: ["CAPABILITY_IAM", "CAPABILITY_NAMED_IAM", "CAPABILITY_AUTO_EXPAND"],
       }));
