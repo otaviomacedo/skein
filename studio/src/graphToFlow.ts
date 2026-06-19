@@ -73,8 +73,23 @@ export function graphToFlow(
     const hasChildren = node.children.length > 0;
     const isExpanded = expandedNodes.has(node.id);
 
+    // Show logicalId only for boxes that explicitly name their primary output.
+    // Heuristic: a box is "named" if it's a constructor (no inputs) OR if it
+    // produces an output not present in its inputs AND that output doesn't look
+    // like a derived ID (i.e., it doesn't contain any input resourceId as a prefix).
+    const inputIds = new Set(node.inputs.map((i) => i.resourceId));
+    const createdOutput = node.outputs.find((o) => !inputIds.has(o.resourceId));
+    const isConstructor = node.inputs.length === 0;
+    const isDerivedId = createdOutput && [...inputIds].some(
+      (id) => createdOutput.resourceId.includes(id),
+    );
+    const logicalId = createdOutput && (isConstructor || !isDerivedId)
+      ? createdOutput.resourceId
+      : undefined;
+
     const nodeData: BoxNodeData = {
       label: node.box,
+      logicalId,
       resourceIds,
       inputNames: node.inputs.map((i) => i.resourceId),
       inputCount: node.inputs.length,

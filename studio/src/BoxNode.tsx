@@ -3,6 +3,7 @@ import { useState } from "react";
 
 export type BoxNodeData = {
   label: string;
+  logicalId?: string;
   resourceIds: string[];
   inputNames: string[];
   inputCount: number;
@@ -68,7 +69,7 @@ function PortWithTooltip({
 }
 
 export function BoxNode({ data, selected }: NodeProps) {
-  const { label, resourceIds, inputNames, inputCount, outputCount, color, isGenerator, isComposite, isExpanded, childCount, faded } =
+  const { label, logicalId, resourceIds, inputNames, inputCount, outputCount, color, isGenerator, isComposite, isExpanded, childCount, faded } =
     data as unknown as BoxNodeData;
 
   const inputHandles = Array.from({ length: inputCount }, (_, i) => {
@@ -136,16 +137,9 @@ export function BoxNode({ data, selected }: NodeProps) {
         )}
         <span style={{ fontWeight: 700, color: "#1a1a1a" }}>{label}</span>
       </div>
-      {resourceIds.length > 0 && (
-        <div style={{ color: "#666", fontSize: 10, lineHeight: 1.4 }}>
-          {resourceIds.slice(0, 3).map((id) => (
-            <div key={id} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {id}
-            </div>
-          ))}
-          {resourceIds.length > 3 && (
-            <div style={{ color: "#999" }}>+{resourceIds.length - 3} more</div>
-          )}
+      {logicalId && (
+        <div style={{ color: "#666", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {logicalId}
         </div>
       )}
       {outputHandles}
