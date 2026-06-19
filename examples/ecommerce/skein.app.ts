@@ -27,24 +27,16 @@
  */
 
 import { mkTable } from "../../src/generated/dynamodb.js";
-import { mkQueue } from "../../src/generated/sqs.js";
 import { mkTopic } from "../../src/generated/sns.js";
 import { ref } from "../../src/runtime/resource.js";
 import { output } from "../../src/runtime/outputs.js";
 import { mkAsset, mkDockerAsset, setAssetEnvironment } from "../../src/runtime/assets.js";
 import { mkLambda } from "../../src/boxes/lambda-helpers.js";
-import { pipe } from "../../src/boxes/pipe.js";
-import { addEnvironment } from "../../src/boxes/lambda.js";
-import { withDLQ } from "../../src/boxes/sqs.js";
-import { alarmOnMetric, notifyOnAlarm } from "../../src/boxes/monitoring.js";
 import { crudApi } from "../../src/boxes/crud-api.js";
 import { snsFanout } from "../../src/boxes/sns-fanout.js";
 import { vpc } from "../../src/boxes/vpc.js";
 import { fargateService } from "../../src/boxes/fargate.js";
-import { stepFunctionsPipeline } from "../../src/boxes/step-functions.js";
-import { queueProcessor } from "../../src/boxes/queue-processor.js";
-import { grantStartExecution } from "../../src/boxes/step-functions-grant.js";
-import { grantTableReadWrite } from "../../src/boxes/dynamodb.js";
+import { orderFulfillment } from "./boxes/order-fulfillment.js";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Networking
@@ -97,17 +89,6 @@ const opsAlertTopic = mkTopic("OpsAlertTopic", {
   topicName: "ops-alerts",
 });
 
-const fulfillmentQueue = mkQueue("FulfillmentQueue", {
-  visibilityTimeout: 300,
-  messageRetentionPeriod: 86400,
-});
-
-const fulfillmentDLQ = mkQueue("FulfillmentDLQ", {
-  messageRetentionPeriod: 1209600,
-  visibilityTimeout: 360,
-});
-
-withDLQ(fulfillmentQueue, fulfillmentDLQ, 3);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Asset environment (determines S3 bucket and ECR repo names)
@@ -130,6 +111,8 @@ const reserveCode = mkAsset("ReserveCode", { type: "file", path: `${handlersDir}
 const confirmCode = mkAsset("ConfirmCode", { type: "file", path: `${handlersDir}send-confirmation.ts` });
 const warehouseCode = mkAsset("WarehouseCode", { type: "file", path: `${handlersDir}notify-warehouse.ts` });
 const analyticsCode = mkAsset("AnalyticsCode", { type: "file", path: `${handlersDir}notify-analytics.ts` });
+const notifyFulfilledCode = mkAsset("NotifyFulfilledCode", { type: "file", path: `${handlersDir}notify-fulfilled.ts` });
+const startFulfillmentCode = mkAsset("StartFulfillmentCode", { type: "file", path: `${handlersDir}start-fulfillment.ts` });
 const dlqCode = mkAsset("DLQCode", { type: "file", path: `${handlersDir}dlq-processor.ts` });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -156,69 +139,20 @@ const { handler: ordersHandler, stageUrl } = crudApi("Orders", {
 // Order Fulfillment Workflow (Step Functions)
 // ═══════════════════════════════════════════════════════════════════════════
 
-const validateFn = mkLambda("ValidateOrder", {
-  runtime: "nodejs20.x",
-  handler: "index.handler",
-  code: { s3Bucket: validateCode.s3Bucket, s3Key: validateCode.s3Key },
-  timeout: 10,
-  memorySize: 128,
+const { stateMachine } = orderFulfillment("OrderFulfillment", {
+  ordersTable,
+  inventoryTable,
+  fulfilledTopic: orderFulfilledTopic,
+  opsAlertTopic,
+  apiHandler: ordersHandler,
+  validateCode,
+  chargeCode,
+  reserveCode,
+  confirmCode,
+  notifyFulfilledCode,
+  consumerCode: startFulfillmentCode,
+  dlqProcessorCode: dlqCode,
 });
-
-const chargeFn = mkLambda("ChargePayment", {
-  runtime: "nodejs20.x",
-  handler: "index.handler",
-  code: { s3Bucket: chargeCode.s3Bucket, s3Key: chargeCode.s3Key },
-  timeout: 30,
-  memorySize: 128,
-});
-
-const reserveInventoryFn = pipe(mkLambda("ReserveInventory", {
-  runtime: "nodejs20.x",
-  handler: "index.handler",
-  code: { s3Bucket: reserveCode.s3Bucket, s3Key: reserveCode.s3Key },
-  timeout: 30,
-  memorySize: 128,
-}))
-  .to(grantTableReadWrite, inventoryTable)
-  .to(addEnvironment, "INVENTORY_TABLE", ref(inventoryTable))
-  .done();
-
-const sendConfirmationFn = mkLambda("SendConfirmation", {
-  runtime: "nodejs20.x",
-  handler: "index.handler",
-  code: { s3Bucket: confirmCode.s3Bucket, s3Key: confirmCode.s3Key },
-  timeout: 10,
-  memorySize: 128,
-});
-
-const { stateMachine } = stepFunctionsPipeline("OrderFulfillment", {
-  steps: [
-    { name: "Validate", fn: validateFn, retry: [{ errorEquals: ["States.TaskFailed"], maxAttempts: 2, backoffRate: 2 }] },
-    {
-      name: "CheckTotal",
-      choices: [
-        { variable: "$.total", comparison: "NumericGreaterThan", value: 10000, next: "HighValueHold" },
-      ],
-      default: "ProcessPayment",
-    },
-    { name: "ProcessPayment", fn: chargeFn, catch: [{ errorEquals: ["States.ALL"], next: "PaymentFailed", resultPath: "$.error" }] },
-    { name: "ReserveStock", fn: reserveInventoryFn },
-    { name: "Confirm", fn: sendConfirmationFn },
-    { name: "Done", succeed: true as const },
-    { name: "HighValueHold", seconds: 0 }, // Placeholder: in production, wait for manual approval
-    { name: "ProcessPaymentAfterHold", fn: chargeFn },
-    { name: "ReserveStockAfterHold", fn: reserveInventoryFn },
-    { name: "ConfirmAfterHold", fn: sendConfirmationFn },
-    { name: "DoneAfterHold", succeed: true as const },
-    { name: "PaymentFailed", error: "PaymentError", cause: "Payment processing failed" },
-  ],
-});
-
-// Wire the Orders API handler to start the fulfillment workflow
-pipe(ordersHandler)
-  .to(grantStartExecution, stateMachine)
-  .to(addEnvironment, "STATE_MACHINE_ARN", stateMachine.arn)
-  .done();
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Post-Fulfillment Fan-Out (SNS → multiple consumers)
@@ -242,37 +176,6 @@ const analyticsFn = mkLambda("NotifyAnalytics", {
 
 snsFanout(orderFulfilledTopic, [warehouseFn, analyticsFn]);
 
-// ═══════════════════════════════════════════════════════════════════════════
-// DLQ Processing
-// ═══════════════════════════════════════════════════════════════════════════
-
-queueProcessor("DLQProcessor", {
-  table: ordersTable,
-  queue: fulfillmentDLQ,
-  functionProps: {
-    runtime: "nodejs20.x",
-    handler: "index.handler",
-    code: { s3Bucket: dlqCode.s3Bucket, s3Key: dlqCode.s3Key },
-    timeout: 60,
-    memorySize: 128,
-  },
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Monitoring
-// ═══════════════════════════════════════════════════════════════════════════
-
-const dlqAlarm = alarmOnMetric("DLQDepthAlarm", {
-  namespace: "AWS/SQS",
-  metricName: "ApproximateNumberOfMessagesVisible",
-  dimensions: [{ name: "QueueName", value: fulfillmentDLQ.queueName }],
-  threshold: 5,
-  comparisonOperator: "GreaterThanOrEqualToThreshold",
-  evaluationPeriods: 2,
-  period: 300,
-});
-
-notifyOnAlarm(dlqAlarm, opsAlertTopic);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Product Catalog (Fargate)

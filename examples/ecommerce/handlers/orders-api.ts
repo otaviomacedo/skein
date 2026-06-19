@@ -1,11 +1,11 @@
 import { DynamoDBClient, GetItemCommand, PutItemCommand, ScanCommand } from "@aws-sdk/client-dynamodb";
-import { SFNClient, StartExecutionCommand } from "@aws-sdk/client-sfn";
+import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
 import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
 
 const db = new DynamoDBClient({});
-const sfn = new SFNClient({});
+const sqs = new SQSClient({});
 const TABLE = process.env.TABLE_NAME!;
-const STATE_MACHINE_ARN = process.env.STATE_MACHINE_ARN!;
+const FULFILLMENT_QUEUE_URL = process.env.FULFILLMENT_QUEUE_URL!;
 
 type Event = {
   httpMethod: string;
@@ -28,10 +28,9 @@ async function createOrder(event: Event) {
 
   await db.send(new PutItemCommand({ TableName: TABLE, Item: marshall(order) }));
 
-  await sfn.send(new StartExecutionCommand({
-    stateMachineArn: STATE_MACHINE_ARN,
-    name: `order-${id}`,
-    input: JSON.stringify({ id, ...body }),
+  await sqs.send(new SendMessageCommand({
+    QueueUrl: FULFILLMENT_QUEUE_URL,
+    MessageBody: JSON.stringify({ id, ...body }),
   }));
 
   return { statusCode: 201, body: JSON.stringify(order) };
@@ -54,4 +53,3 @@ async function listOrders() {
   const items = (result.Items || []).map(unmarshall);
   return { statusCode: 200, body: JSON.stringify(items) };
 }
-
