@@ -91,14 +91,63 @@ function resolveInputs(rawInputs: unknown[], schema: BoxSchema): unknown[] {
   return rawInputs.map((raw, i) => {
     const input = schema.inputs[i];
     if (input.kind === "resource") {
-      const id = `Gen${input.type.split("::")[2] ?? "Res"}${resourceCounter++}`;
-      if (input.factory) return input.factory(id, input.props ?? {});
-      const entry = fixtures[input.type];
-      if (entry) return entry.factory(id, { ...entry.minimalProps, ...input.props });
-      return makeResource(input.type, id, input.props ?? {});
+      return createResource(input.type, input.props, input.factory);
+    }
+    if (input.kind === "props" && typeof raw === "object" && raw !== null) {
+      return resolvePropsDeep(raw as Record<string, unknown>);
     }
     return raw;
   });
+}
+
+function createResource(type: string, props?: Record<string, unknown>, factory?: (id: string, props: any) => any): unknown {
+  const id = `Gen${type.split("::")[2] ?? "Res"}${resourceCounter++}`;
+  if (factory) return factory(id, props ?? {});
+  const entry = fixtures[type];
+  if (entry) return entry.factory(id, { ...entry.minimalProps, ...props });
+  return makeResource(type, id, props ?? {});
+}
+
+function resolvePropsDeep(obj: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (typeof value === "string" && value in fixtures) {
+      // Value is a CloudFormation type string — resolve it to an actual resource
+      result[key] = createResource(value);
+    } else if (isResourceTypeHint(key, value)) {
+      // Heuristic: property name suggests a resource type
+      const cfnType = guessResourceType(key);
+      if (cfnType && cfnType in fixtures) {
+        result[key] = createResource(cfnType);
+      } else {
+        result[key] = value;
+      }
+    } else if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+      result[key] = resolvePropsDeep(value as Record<string, unknown>);
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
+function isResourceTypeHint(key: string, value: unknown): boolean {
+  if (value !== "placeholder") return false;
+  const resourceKeyPatterns = /^(table|queue|topic|bucket|function|role|vpc|subnet|cluster|stateMachine)/i;
+  return resourceKeyPatterns.test(key);
+}
+
+function guessResourceType(key: string): string | null {
+  const lower = key.toLowerCase();
+  if (lower.includes("table")) return "AWS::DynamoDB::Table";
+  if (lower.includes("queue")) return "AWS::SQS::Queue";
+  if (lower.includes("topic")) return "AWS::SNS::Topic";
+  if (lower.includes("bucket")) return "AWS::S3::Bucket";
+  if (lower.includes("function") || lower.includes("lambda")) return "AWS::Lambda::Function";
+  if (lower.includes("role")) return "AWS::IAM::Role";
+  if (lower.includes("vpc")) return "AWS::EC2::VPC";
+  if (lower.includes("statemachine")) return "AWS::StepFunctions::StateMachine";
+  return null;
 }
 
 // === Core compat check (with manual setup) ===

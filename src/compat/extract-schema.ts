@@ -157,6 +157,12 @@ function buildMinimalObject(type: ts.Type, checker: ts.TypeChecker): Record<stri
 }
 
 function buildMinimalValue(type: ts.Type, checker: ts.TypeChecker): unknown {
+  // Check if it's a Resource type first
+  const cfnType = extractCfnType(type, checker);
+  if (cfnType) {
+    return cfnType; // Return the CFN type string as a marker for resolvePropsDeep
+  }
+
   if (type.flags & ts.TypeFlags.String || type.flags & ts.TypeFlags.StringLiteral) {
     return "placeholder";
   }
