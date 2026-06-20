@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="200" height="200">
+  <!-- Option 4: Tensor Product — the ⊗ symbol abstracted as interlocking rings, representing parallel composition -->
+  <defs>
+    <linearGradient id="g4a" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0ea5e9"/>
+      <stop offset="100%" stop-color="#4f46e5"/>
+    </linearGradient>
+    <linearGradient id="g4b" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#f97316"/>
+      <stop offset="100%" stop-color="#dc2626"/>
+    </linearGradient>
+  </defs>
+  <!-- Ring 1 -->
+  <circle cx="42" cy="50" r="22" fill="none" stroke="url(#g4a)" stroke-width="4"/>
+  <!-- Ring 2 (overlapping) -->
+  <circle cx="58" cy="50" r="22" fill="none" stroke="url(#g4b)" stroke-width="4"/>
+  <!-- Crossing effect: white break on ring 2 where ring 1 passes over -->
+  <path d="M 50 32 A 22 22 0 0 0 50 68" fill="none" stroke="white" stroke-width="6"/>
+  <path d="M 50 32 A 22 22 0 0 0 50 68" fill="none" stroke="url(#g4b)" stroke-width="4"/>
+  <!-- Central intersection dot -->
+  <circle cx="50" cy="50" r="3.5" fill="#4f46e5"/>
+</svg>

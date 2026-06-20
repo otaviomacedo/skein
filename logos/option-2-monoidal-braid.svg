@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="200" height="200">
+  <!-- Option 2: Monoidal Braid — two strands crossing (braiding/σ), referencing the symmetric monoidal structure -->
+  <defs>
+    <linearGradient id="g2a" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0ea5e9"/>
+      <stop offset="100%" stop-color="#6366f1"/>
+    </linearGradient>
+    <linearGradient id="g2b" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f97316"/>
+      <stop offset="100%" stop-color="#ef4444"/>
+    </linearGradient>
+  </defs>
+  <!-- Strand 1: top-left to bottom-right, goes OVER at crossing -->
+  <path d="M 15 25 C 35 25, 40 45, 50 50" fill="none" stroke="url(#g2a)" stroke-width="4.5" stroke-linecap="round"/>
+  <path d="M 50 50 C 60 55, 65 75, 85 75" fill="none" stroke="url(#g2a)" stroke-width="4.5" stroke-linecap="round"/>
+  <!-- Gap/break for crossing effect -->
+  <path d="M 15 75 C 35 75, 40 60, 46 54" fill="none" stroke="url(#g2b)" stroke-width="4.5" stroke-linecap="round"/>
+  <path d="M 54 46 C 60 40, 65 25, 85 25" fill="none" stroke="url(#g2b)" stroke-width="4.5" stroke-linecap="round"/>
+  <!-- Nodes at endpoints -->
+  <circle cx="15" cy="25" r="4" fill="#0ea5e9"/>
+  <circle cx="85" cy="75" r="4" fill="#6366f1"/>
+  <circle cx="15" cy="75" r="4" fill="#f97316"/>
+  <circle cx="85" cy="25" r="4" fill="#ef4444"/>
+</svg>

@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <!--
+    Skein logo: A stylized knot diagram inside a rounded square.
+    Three strands with over/under crossings allude to the skein relation (L+, L-, L0).
+    Flat, geometric, works at small sizes.
+  -->
+
+  <!-- Background rounded square -->
+  <rect x="4" y="4" width="120" height="120" rx="24" fill="#1E1E2E"/>
+
+  <!-- L+: Positive crossing (blue over purple) -->
+  <!-- Under strand with gap -->
+  <path d="M 24 46 Q 46 56 56 48" fill="none" stroke="#CBA6F7" stroke-width="7" stroke-linecap="round"/>
+  <path d="M 72 40 Q 84 36 104 42" fill="none" stroke="#CBA6F7" stroke-width="7" stroke-linecap="round"/>
+  <!-- Over strand continuous -->
+  <path d="M 24 32 Q 50 28 64 44 Q 78 60 104 54" fill="none" stroke="#89B4FA" stroke-width="7" stroke-linecap="round"/>
+
+  <!-- L-: Negative crossing (purple over blue) -->
+  <!-- Under strand with gap -->
+  <path d="M 24 74 Q 46 66 56 72" fill="none" stroke="#89B4FA" stroke-width="7" stroke-linecap="round"/>
+  <path d="M 72 80 Q 84 84 104 78" fill="none" stroke="#89B4FA" stroke-width="7" stroke-linecap="round"/>
+  <!-- Over strand continuous -->
+  <path d="M 24 88 Q 50 94 64 78 Q 78 62 104 66" fill="none" stroke="#CBA6F7" stroke-width="7" stroke-linecap="round"/>
+
+</svg>

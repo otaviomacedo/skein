@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 100" width="240" height="200">
+  <!-- Tighter skein: wires wind around a central core before exiting, like yarn pulled from a skein -->
+  <defs>
+    <linearGradient id="gs1" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#4f46e5"/>
+      <stop offset="100%" stop-color="#7c3aed"/>
+    </linearGradient>
+    <linearGradient id="gs2" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0ea5e9"/>
+      <stop offset="100%" stop-color="#4f46e5"/>
+    </linearGradient>
+    <linearGradient id="gs3" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f97316"/>
+      <stop offset="100%" stop-color="#dc2626"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Wire 1: wraps around the top of the central form -->
+  <path d="M 10 30 C 28 30, 38 30, 45 38 C 52 46, 58 40, 60 36 C 62 32, 68 30, 75 38 C 82 46, 92 30, 110 30"
+    fill="none" stroke="url(#gs2)" stroke-width="3.5" stroke-linecap="round"/>
+
+  <!-- Wire 2: wraps around the middle -->
+  <path d="M 10 50 C 28 50, 36 50, 42 54 C 48 58, 54 46, 60 50 C 66 54, 72 42, 78 46 C 84 50, 92 50, 110 50"
+    fill="none" stroke="url(#gs1)" stroke-width="3.5" stroke-linecap="round"/>
+
+  <!-- Wire 3: wraps around the bottom -->
+  <path d="M 10 70 C 28 70, 38 70, 45 62 C 52 54, 58 60, 60 64 C 62 68, 68 70, 75 62 C 82 54, 92 70, 110 70"
+    fill="none" stroke="url(#gs3)" stroke-width="3.5" stroke-linecap="round"/>
+
+  <!-- Input dots -->
+  <circle cx="10" cy="30" r="3.5" fill="#0ea5e9"/>
+  <circle cx="10" cy="50" r="3.5" fill="#4f46e5"/>
+  <circle cx="10" cy="70" r="3.5" fill="#f97316"/>
+
+  <!-- Output dots -->
+  <circle cx="110" cy="30" r="3.5" fill="#4f46e5"/>
+  <circle cx="110" cy="50" r="3.5" fill="#7c3aed"/>
+  <circle cx="110" cy="70" r="3.5" fill="#dc2626"/>
+</svg>
