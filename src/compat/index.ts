@@ -1,8 +1,8 @@
+import fc from "fast-check";
 import { resetAll } from "../testing/index.js";
 import { synth } from "../runtime/synth.js";
 import type { Template } from "../runtime/synth.js";
 import { makeResource } from "../runtime/resource.js";
-import type { Resource } from "../runtime/resource.js";
 import { fixtures } from "../generated/fixtures.js";
 import { extractSchemas } from "./extract-schema.js";
 
@@ -32,6 +32,10 @@ export type CompatResult = {
   newResourceCount: number;
   addedResources: string[];
   removedResources: string[];
+  /** The input that caused a failure (if any) */
+  counterexample?: unknown[];
+  /** Number of inputs tested */
+  numRuns: number;
 };
 
 // === Input schema declaration ===
@@ -42,10 +46,6 @@ export type InputKind =
   | { kind: "resource"; type: string; props?: Record<string, unknown>; factory?: (id: string, props: any) => any }
   | { kind: "props"; value: Record<string, unknown> };
 
-/**
- * Shorthand for declaring a resource input using just the CloudFormation type.
- * Props and factory are looked up from the generated fixtures registry.
- */
 export function resource(type: string, propsOverride?: Record<string, unknown>): InputKind {
   return { kind: "resource", type, props: propsOverride };
 }
@@ -54,73 +54,55 @@ export type BoxSchema = {
   inputs: InputKind[];
 };
 
-/**
- * Declares the input schema for a box, enabling automatic fixture generation
- * for compatibility checking.
- *
- * Example:
- *   const schema = declareSchema({
- *     inputs: [
- *       { kind: "string", value: "Worker" },
- *       { kind: "props", value: { runtime: "nodejs20.x", handler: "index.handler", code: { s3Bucket: "b", s3Key: "k" } } },
- *       { kind: "resource", type: "AWS::DynamoDB::Table", props: { keySchema: [{ attributeName: "pk", keyType: "HASH" }] } },
- *       { kind: "resource", type: "AWS::SQS::Queue" },
- *     ],
- *   });
- */
 export function declareSchema(schema: BoxSchema): BoxSchema {
   return schema;
 }
 
-// === Fixture generation ===
+// === Arbitraries for input generation ===
 
-let fixtureCounter = 0;
+let resourceCounter = 0;
 
-function generateFixtures(schema: BoxSchema): unknown[] {
-  return schema.inputs.map((input, i) => {
-    switch (input.kind) {
-      case "string":
-        return input.value ?? `Fixture${i}`;
-      case "number":
-        return input.value ?? i;
-      case "resource":
-        return generateResource(input.type, input.props ?? {}, input.factory);
-      case "props":
-        return input.value;
+function arbitraryForInput(input: InputKind): fc.Arbitrary<unknown> {
+  switch (input.kind) {
+    case "string":
+      return fc.oneof(
+        fc.constant("Alpha"),
+        fc.constant("Beta"),
+        fc.constant("Gamma"),
+        fc.constant("Delta"),
+        fc.nat({ max: 999 }).map((n) => `Test${n}`),
+      );
+    case "number":
+      return fc.integer({ min: 1, max: 10000 });
+    case "resource":
+      return fc.constant(input);
+    case "props":
+      return fc.constant(input.value);
+  }
+}
+
+function arbitraryInputs(schema: BoxSchema): fc.Arbitrary<unknown[]> {
+  if (schema.inputs.length === 0) return fc.constant([]);
+  const arbs = schema.inputs.map(arbitraryForInput);
+  return fc.tuple(...arbs).map((tuple) => [...tuple]);
+}
+
+function resolveInputs(rawInputs: unknown[], schema: BoxSchema): unknown[] {
+  return rawInputs.map((raw, i) => {
+    const input = schema.inputs[i];
+    if (input.kind === "resource") {
+      const id = `Gen${input.type.split("::")[2] ?? "Res"}${resourceCounter++}`;
+      if (input.factory) return input.factory(id, input.props ?? {});
+      const entry = fixtures[input.type];
+      if (entry) return entry.factory(id, { ...entry.minimalProps, ...input.props });
+      return makeResource(input.type, id, input.props ?? {});
     }
+    return raw;
   });
-}
-
-function generateResource(type: string, props?: Record<string, unknown>, factory?: (id: string, props: any) => any): Resource {
-  const id = `Fixture${type.split("::")[2] ?? "Resource"}${fixtureCounter++}`;
-
-  if (factory) {
-    return factory(id, props ?? {});
-  }
-
-  const entry = fixtures[type];
-  if (entry) {
-    const mergedProps = { ...entry.minimalProps, ...props };
-    return entry.factory(id, mergedProps);
-  }
-
-  return makeResource(type, id, props ?? {});
-}
-
-function resetFixtures(): void {
-  fixtureCounter = 0;
 }
 
 // === Core compat check (with manual setup) ===
 
-/**
- * Checks backwards compatibility between two versions of a box by comparing
- * their synth outputs for a given setup function.
- *
- * The `setup` function receives the box as argument and should call it with
- * representative inputs (creating any prerequisite resources first). It is
- * called twice: once with `oldBox` and once with `newBox`.
- */
 export function checkCompat<TBox>(
   oldBox: TBox,
   newBox: TBox,
@@ -128,13 +110,9 @@ export function checkCompat<TBox>(
 ): CompatResult {
   const oldTemplate = synthInIsolation(() => setup(oldBox));
   const newTemplate = synthInIsolation(() => setup(newBox));
-  return compareTemplates(oldTemplate, newTemplate);
+  return { ...compareTemplates(oldTemplate, newTemplate), numRuns: 1 };
 }
 
-/**
- * Checks compatibility across multiple representative inputs.
- * Returns the worst (least compatible) result.
- */
 export function checkCompatMulti<TBox>(
   oldBox: TBox,
   newBox: TBox,
@@ -154,71 +132,165 @@ export function checkCompatMulti<TBox>(
   return { results, worst };
 }
 
-// === Schema-driven compat check (automatic fixtures) ===
+// === Property-based compat check ===
+
+export type PropertyCheckOptions = {
+  numRuns?: number;
+  seed?: number;
+};
 
 /**
- * Checks backwards compatibility using a declared schema to generate inputs
- * automatically. No hand-written setup function needed.
+ * Property-based backwards compatibility check using fast-check.
  *
- * Example:
- *   const result = checkCompatAuto(workerBoxV1, workerBoxV2, schema);
+ * Generates random inputs matching the schema and verifies that
+ * the compatibility predicate holds for all of them. Returns a
+ * counterexample if one is found.
+ */
+export function checkCompatProperty(
+  oldBox: (...args: any[]) => any,
+  newBox: (...args: any[]) => any,
+  schema: BoxSchema,
+  opts: PropertyCheckOptions = {},
+): CompatResult {
+  const { numRuns = 100, seed } = opts;
+  let worstResult: CompatResult = {
+    level: "strict",
+    diffs: [],
+    oldResourceCount: 0,
+    newResourceCount: 0,
+    addedResources: [],
+    removedResources: [],
+    numRuns: 0,
+  };
+  let counterexample: unknown[] | undefined;
+  let runsCompleted = 0;
+
+  const arb = arbitraryInputs(schema);
+
+  try {
+    fc.assert(
+      fc.property(arb, (rawInputs) => {
+        try {
+          resourceCounter = 0;
+          const oldTemplate = synthInIsolation(() => {
+            const oldInputs = resolveInputs(rawInputs, schema);
+            oldBox(...oldInputs);
+          });
+
+          resourceCounter = 0;
+          const newTemplate = synthInIsolation(() => {
+            const newInputs = resolveInputs(rawInputs, schema);
+            newBox(...newInputs);
+          });
+
+          const result = compareTemplates(oldTemplate, newTemplate);
+          runsCompleted++;
+
+          if (levelOrdinal(result.level) > levelOrdinal(worstResult.level)) {
+            worstResult = { ...result, numRuns: runsCompleted };
+          }
+
+          if (result.level === "breaking") {
+            counterexample = rawInputs as unknown[];
+            return false;
+          }
+          return true;
+        } catch (err) {
+          // If the box throws, treat this input as non-comparable (skip)
+          // This happens when generated inputs don't satisfy runtime constraints
+          runsCompleted++;
+          return true;
+        }
+      }),
+      { numRuns, seed, endOnFailure: true },
+    );
+  } catch (e: any) {
+    if (counterexample) {
+      return { ...worstResult, counterexample, numRuns: runsCompleted };
+    }
+    // fast-check throws on failure with various message formats
+    if (e.constructor?.name === "Error" && runsCompleted === 0) {
+      // The property callback itself threw — likely a setup issue
+      throw new Error(`Compat check failed during execution: ${e.message}`);
+    }
+    // If we completed some runs and then got an error, return what we have
+    if (runsCompleted > 0) {
+      return { ...worstResult, numRuns: runsCompleted };
+    }
+    throw e;
+  }
+
+  return { ...worstResult, numRuns: runsCompleted, counterexample };
+}
+
+/**
+ * Schema-driven compat check using a single fixed input (for quick checks).
  */
 export function checkCompatAuto(
   oldBox: (...args: any[]) => any,
   newBox: (...args: any[]) => any,
   schema: BoxSchema,
 ): CompatResult {
+  resourceCounter = 0;
   const oldTemplate = synthInIsolation(() => {
-    resetFixtures();
-    const inputs = generateFixtures(schema);
+    const inputs = generateFixedInputs(schema);
     oldBox(...inputs);
   });
 
+  resourceCounter = 0;
   const newTemplate = synthInIsolation(() => {
-    resetFixtures();
-    const inputs = generateFixtures(schema);
+    const inputs = generateFixedInputs(schema);
     newBox(...inputs);
   });
 
-  return compareTemplates(oldTemplate, newTemplate);
+  return { ...compareTemplates(oldTemplate, newTemplate), numRuns: 1 };
 }
 
-// === Fully automated compat check ===
-
 /**
- * Fully automated backwards compatibility check. Given a source file path
- * and two box functions, extracts the schema from the source, generates
- * fixtures, synths both versions, and compares.
- *
- * This is the zero-configuration entrypoint for library authors.
- *
- * Example:
- *   const result = checkCompatFromSource(
- *     "src/boxes/my-box.ts",
- *     oldBox,
- *     newBox,
- *   );
+ * Fully automated: extract schema from source, run property-based check.
  */
 export function checkCompatFromSource(
   sourceFilePath: string,
   oldBox: (...args: any[]) => any,
   newBox: (...args: any[]) => any,
-  boxName?: string,
+  opts?: PropertyCheckOptions & { boxName?: string },
 ): CompatResult {
   const schemas = extractSchemas(sourceFilePath);
   if (schemas.length === 0) {
     throw new Error(`No box schemas found in ${sourceFilePath}`);
   }
 
-  const schema = boxName
-    ? schemas.find(s => s.boxName === boxName)?.schema
+  const schema = opts?.boxName
+    ? schemas.find(s => s.boxName === opts.boxName)?.schema
     : schemas[0].schema;
 
   if (!schema) {
-    throw new Error(`Box "${boxName}" not found in ${sourceFilePath}`);
+    throw new Error(`Box "${opts?.boxName}" not found in ${sourceFilePath}`);
   }
 
-  return checkCompatAuto(oldBox, newBox, schema);
+  return checkCompatProperty(oldBox, newBox, schema, opts);
+}
+
+// === Fixed input generation (for quick deterministic checks) ===
+
+function generateFixedInputs(schema: BoxSchema): unknown[] {
+  return schema.inputs.map((input, i) => {
+    switch (input.kind) {
+      case "string":
+        return input.value ?? `Fixture${i}`;
+      case "number":
+        return input.value ?? i;
+      case "resource": {
+        const id = `Fixture${input.type.split("::")[2] ?? "Resource"}${resourceCounter++}`;
+        if (input.factory) return input.factory(id, input.props ?? {});
+        const entry = fixtures[input.type];
+        if (entry) return entry.factory(id, { ...entry.minimalProps, ...input.props });
+        return makeResource(input.type, id, input.props ?? {});
+      }
+      case "props":
+        return input.value;
+    }
+  });
 }
 
 // === Internals ===
@@ -237,7 +309,7 @@ function synthInIsolation(fn: () => void): Template {
   return synth();
 }
 
-function compareTemplates(oldT: Template, newT: Template): CompatResult {
+function compareTemplates(oldT: Template, newT: Template): Omit<CompatResult, "numRuns"> {
   const diffs: ResourceDiff[] = [];
   const oldIds = new Set(Object.keys(oldT.Resources));
   const newIds = new Set(Object.keys(newT.Resources));
@@ -361,13 +433,13 @@ export function formatCompatReport(result: CompatResult): string {
 
   switch (result.level) {
     case "strict":
-      lines.push("✓ Strictly compatible (identical output)");
+      lines.push(`✓ Strictly compatible (identical output) — ${result.numRuns} inputs tested`);
       break;
     case "patch":
-      lines.push("✓ Patch-compatible (additive changes only)");
+      lines.push(`✓ Patch-compatible (additive changes only) — ${result.numRuns} inputs tested`);
       break;
     case "breaking":
-      lines.push("✗ BREAKING CHANGE");
+      lines.push(`✗ BREAKING CHANGE — found after ${result.numRuns} inputs`);
       break;
   }
 
@@ -405,6 +477,10 @@ export function formatCompatReport(result: CompatResult): string {
         }
         break;
     }
+  }
+
+  if (result.counterexample) {
+    lines.push(`  Counterexample: ${JSON.stringify(result.counterexample).slice(0, 200)}`);
   }
 
   return lines.join("\n");

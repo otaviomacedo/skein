@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { checkCompat, checkCompatMulti, checkCompatAuto, declareSchema, resource, formatCompatReport } from "../src/compat/index.js";
+import { checkCompat, checkCompatMulti, checkCompatAuto, checkCompatProperty, declareSchema, resource, formatCompatReport } from "../src/compat/index.js";
 import { mkTable, Table } from "../src/generated/dynamodb.js";
 import { mkQueue, Queue } from "../src/generated/sqs.js";
 import { ref } from "../src/runtime/resource.js";
@@ -215,5 +215,41 @@ describe("checkCompatAuto", () => {
     const result = checkCompatAuto(workerBoxV1, workerBoxV2Breaking, schema);
     expect(result.level).toBe("breaking");
     expect(result.removedResources.length).toBeGreaterThan(0);
+  });
+});
+
+describe("checkCompatProperty (property-based testing)", () => {
+  const schema = declareSchema({
+    inputs: [
+      { kind: "string" },
+      { kind: "props", value: { runtime: "nodejs20.x", handler: "index.handler", code: { s3Bucket: "b", s3Key: "k" } } },
+      resource("AWS::DynamoDB::Table"),
+      resource("AWS::SQS::Queue"),
+    ],
+  });
+
+  it("verifies strict compatibility across random inputs", () => {
+    const result = checkCompatProperty(workerBoxV1, workerBoxV1, schema, { numRuns: 50 });
+    expect(result.level).toBe("strict");
+    expect(result.numRuns).toBe(50);
+    expect(result.counterexample).toBeUndefined();
+  });
+
+  it("verifies patch-compatibility across random inputs", () => {
+    const result = checkCompatProperty(workerBoxV1, workerBoxV2Additive, schema, { numRuns: 50 });
+    expect(result.level).toBe("patch");
+    expect(result.counterexample).toBeUndefined();
+  });
+
+  it("finds a counterexample for breaking changes", () => {
+    const result = checkCompatProperty(workerBoxV1, workerBoxV2Breaking, schema, { numRuns: 50 });
+    expect(result.level).toBe("breaking");
+    expect(result.counterexample).toBeDefined();
+    expect(result.removedResources.length).toBeGreaterThan(0);
+  });
+
+  it("reports the number of runs completed", () => {
+    const result = checkCompatProperty(workerBoxV1, workerBoxV1, schema, { numRuns: 20 });
+    expect(result.numRuns).toBe(20);
   });
 });
