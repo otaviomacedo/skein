@@ -21,14 +21,14 @@ function usage() {
 skein - IaC framework based on monoidal composition
 
 Usage:
-  skein synth  [--entry <file>] [--out <dir>]
-  skein diff   [--entry <file>] [--out <dir>]
-  skein deploy [--entry <file>] [--out <dir>] [--qualifier <q>] [--region <r>]
+  skein synth        [--entry <file>] [--out <dir>]
+  skein diff         [--entry <file>] [--out <dir>]
+  skein deploy       [--entry <file>] [--out <dir>] [--qualifier <q>] [--region <r>]
 
 Commands:
-  synth   Run the app and produce a cloud assembly
-  diff    Synth and show what changed vs. the last assembly
-  deploy  Synth, build assets, upload, and deploy stacks via CloudFormation
+  synth         Run the app and produce a cloud assembly
+  diff          Synth and show what changed vs. the last assembly
+  deploy        Synth, build assets, upload, and deploy stacks via CloudFormation
 
 Options:
   --entry <file>        Entrypoint file (default: ${DEFAULT_ENTRY})
@@ -55,7 +55,6 @@ function parseArgs(args: string[]): ParsedArgs {
   let outDir = DEFAULT_OUT_DIR;
   let qualifier: string | undefined;
   let region: string | undefined;
-
   for (let i = 1; i < args.length; i++) {
     if (args[i] === "--entry" && args[i + 1]) {
       entry = args[++i];

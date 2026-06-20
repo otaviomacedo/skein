@@ -9,6 +9,8 @@
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
+    "test:compat": "vitest run --config vitest.compat.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:watch": "vitest",
     "generate": "tsx codegen/generate.ts codegen/cfn-spec.json src/generated codegen/relationships.json",
     "fetch-spec": "curl -sL --compressed https://d1uauaxba7bl26.cloudfront.net/latest/gzip/CloudFormationResourceSpecification.json -o codegen/cfn-spec.json",
