@@ -16,6 +16,8 @@ const mergeableCollections = new Set<string>([
   "SecurityGroupIngress",
   "SecurityGroupEgress",
   "Rules",
+  "Targets",
+  "targets",
 ]);
 
 export function addMergeableCollection(path: string): void {
