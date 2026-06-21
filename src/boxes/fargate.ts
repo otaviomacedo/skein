@@ -253,3 +253,225 @@ export const fargateService = box(
     };
   },
 );
+
+// === Service auto-scaling ===
+
+import { makeResource, deriveId } from "../runtime/resource.js";
+import { updateResource } from "../runtime/registry.js";
+import type { Service as EcsService } from "../generated/ecs.js";
+
+export type ServiceScalingConfig = {
+  minCapacity: number;
+  maxCapacity: number;
+  targetCpuUtilization?: number;
+  targetMemoryUtilization?: number;
+};
+
+/**
+ * Adds auto-scaling to an ECS service based on CPU and/or memory utilization.
+ * Creates a ScalableTarget and one or two TargetTrackingScalingPolicies.
+ */
+export const autoScaleService = box(
+  "autoScaleService",
+  (service: EcsService, cluster: Cluster, config: ServiceScalingConfig): EcsService => {
+    const targetId = deriveId(service, "ScaleTarget");
+    const resourceId = `service/${ref(cluster)}/${service.name}`;
+
+    makeResource("AWS::ApplicationAutoScaling::ScalableTarget", targetId, {
+      serviceNamespace: "ecs",
+      resourceId,
+      scalableDimension: "ecs:service:DesiredCount",
+      minCapacity: config.minCapacity,
+      maxCapacity: config.maxCapacity,
+    });
+
+    const targetRef = { __type: "AWS::ApplicationAutoScaling::ScalableTarget" as const, logicalId: targetId, properties: {} };
+
+    if (config.targetCpuUtilization) {
+      makeResource("AWS::ApplicationAutoScaling::ScalingPolicy", deriveId(service, "CpuScalePolicy"), {
+        policyName: deriveId(service, "CpuScalePolicy"),
+        policyType: "TargetTrackingScaling",
+        scalingTargetId: ref(targetRef),
+        targetTrackingScalingPolicyConfiguration: {
+          targetValue: config.targetCpuUtilization,
+          predefinedMetricSpecification: {
+            predefinedMetricType: "ECSServiceAverageCPUUtilization",
+          },
+        },
+      });
+    }
+
+    if (config.targetMemoryUtilization) {
+      makeResource("AWS::ApplicationAutoScaling::ScalingPolicy", deriveId(service, "MemScalePolicy"), {
+        policyName: deriveId(service, "MemScalePolicy"),
+        policyType: "TargetTrackingScaling",
+        scalingTargetId: ref(targetRef),
+        targetTrackingScalingPolicyConfiguration: {
+          targetValue: config.targetMemoryUtilization,
+          predefinedMetricSpecification: {
+            predefinedMetricType: "ECSServiceAverageMemoryUtilization",
+          },
+        },
+      });
+    }
+
+    return service;
+  },
+);
+
+// === Service discovery ===
+
+import { mkPrivateDnsNamespace, mkService as mkCloudMapService } from "../generated/servicediscovery.js";
+import type { PrivateDnsNamespace, Service as CloudMapService } from "../generated/servicediscovery.js";
+import type { VPC as VPCType } from "../generated/ec2.js";
+
+export type ServiceDiscoveryResult = {
+  readonly namespace: PrivateDnsNamespace;
+  readonly registryService: CloudMapService;
+};
+
+/**
+ * Enables service discovery via AWS Cloud Map. Creates a private DNS namespace
+ * and a service registry that the ECS service registers into.
+ * Other services can then find this service by DNS name (e.g., "api.local").
+ */
+export const enableServiceDiscovery = box(
+  "enableServiceDiscovery",
+  (service: EcsService, vpcResource: VPCType, namespaceName: string, serviceName: string): ServiceDiscoveryResult => {
+    const namespace = mkPrivateDnsNamespace(deriveId(service, "Namespace"), {
+      name: namespaceName,
+      vpc: vpcResource.vpcId,
+    } as any);
+
+    const registryService = mkCloudMapService(deriveId(service, "Registry"), {
+      name: serviceName,
+      namespaceId: namespace.id,
+      dnsConfig: {
+        dnsRecords: [{ type: "A", ttl: 60 }],
+      },
+      healthCheckCustomConfig: { failureThreshold: 1 },
+    } as any);
+
+    // Wire the ECS service to register with Cloud Map
+    const serviceProps = service.properties as Record<string, unknown>;
+    const existingRegistries = (serviceProps.serviceRegistries as any[]) ?? [];
+    const properties = {
+      ...serviceProps,
+      serviceRegistries: [...existingRegistries, {
+        registryArn: registryService.arn,
+      }],
+    };
+    updateResource(service.logicalId, service.__type, properties);
+
+    return { namespace, registryService };
+  },
+);
+
+// === Sidecar container ===
+
+export type SidecarProps = {
+  name: string;
+  image: string;
+  port?: number;
+  essential?: boolean;
+  environment?: Record<string, string>;
+  command?: string[];
+};
+
+/**
+ * Adds a sidecar container to an existing task definition.
+ * Commonly used for logging agents, proxies, or metrics collectors.
+ */
+export const addSidecar = box(
+  "addSidecar",
+  (taskDef: TaskDefinition, sidecar: SidecarProps): TaskDefinition => {
+    const props = taskDef.properties as Record<string, unknown>;
+    const existingContainers = (props.containerDefinitions as any[]) ?? [];
+
+    const container: Record<string, unknown> = {
+      name: sidecar.name,
+      image: sidecar.image,
+      essential: sidecar.essential ?? false,
+    };
+    if (sidecar.port) {
+      container.portMappings = [{ containerPort: sidecar.port, protocol: "tcp" }];
+    }
+    if (sidecar.environment) {
+      container.environment = Object.entries(sidecar.environment).map(([name, value]) => ({ name, value }));
+    }
+    if (sidecar.command) {
+      container.command = sidecar.command;
+    }
+
+    const properties = {
+      ...props,
+      containerDefinitions: [...existingContainers, container],
+    };
+    updateResource(taskDef.logicalId, taskDef.__type, properties);
+    return { ...taskDef, properties } as TaskDefinition;
+  },
+);
+
+// === Deployment circuit breaker ===
+
+/**
+ * Enables the deployment circuit breaker with automatic rollback on the service.
+ * If a deployment fails to stabilize, ECS rolls back to the last stable version.
+ */
+export const enableCircuitBreaker = box(
+  "enableCircuitBreaker",
+  (service: EcsService): EcsService => {
+    const props = service.properties as Record<string, unknown>;
+    const existingDeployConfig = (props.deploymentConfiguration as Record<string, unknown>) ?? {};
+    const properties = {
+      ...props,
+      deploymentConfiguration: {
+        ...existingDeployConfig,
+        deploymentCircuitBreaker: { enable: true, rollback: true },
+      },
+    };
+    updateResource(service.logicalId, service.__type, properties);
+    return { ...service, properties } as EcsService;
+  },
+);
+
+// === EFS volume mount ===
+
+import type { FileSystem } from "../generated/efs.js";
+
+/**
+ * Mounts an EFS filesystem into a container in the task definition.
+ * Adds the volume definition and a mount point on the specified container.
+ */
+export const mountEfs = box(
+  "mountEfs",
+  (taskDef: TaskDefinition, filesystem: FileSystem, containerName: string, containerPath: string, volumeName?: string): TaskDefinition => {
+    const props = taskDef.properties as Record<string, unknown>;
+    const existingVolumes = (props.volumes as any[]) ?? [];
+    const existingContainers = (props.containerDefinitions as any[]) ?? [];
+    const vName = volumeName ?? `efs-${filesystem.logicalId}`;
+
+    // Add volume
+    const volumes = [...existingVolumes, {
+      name: vName,
+      efsVolumeConfiguration: {
+        filesystemId: ref(filesystem),
+        transitEncryption: "ENABLED",
+      },
+    }];
+
+    // Add mount point to the target container
+    const containerDefinitions = existingContainers.map((c: any) => {
+      if (c.name !== containerName) return c;
+      const existingMounts = c.mountPoints ?? [];
+      return {
+        ...c,
+        mountPoints: [...existingMounts, { sourceVolume: vName, containerPath, readOnly: false }],
+      };
+    });
+
+    const properties = { ...props, volumes, containerDefinitions };
+    updateResource(taskDef.logicalId, taskDef.__type, properties);
+    return { ...taskDef, properties } as TaskDefinition;
+  },
+);

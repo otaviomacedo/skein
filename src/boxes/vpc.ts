@@ -8,6 +8,12 @@ import {
   mkRoute,
   mkVPCGatewayAttachment,
   mkSubnetRouteTableAssociation,
+  mkSecurityGroup,
+  mkSecurityGroupIngress,
+  mkSecurityGroupEgress,
+  mkVPCEndpoint,
+  mkFlowLog,
+  mkVPCPeeringConnection,
 } from "../generated/ec2.js";
 import type {
   VPC,
@@ -17,8 +23,18 @@ import type {
   EIP,
   RouteTable,
   Route,
+  SecurityGroup,
+  SecurityGroupIngress,
+  SecurityGroupEgress,
+  VPCEndpoint,
+  FlowLog,
+  VPCPeeringConnection,
 } from "../generated/ec2.js";
-import { ref } from "../runtime/resource.js";
+import { mkRole } from "../generated/iam.js";
+import type { Role } from "../generated/iam.js";
+import { mkLogGroup } from "../generated/logs.js";
+import type { LogGroup } from "../generated/logs.js";
+import { ref, deriveId, makeResource } from "../runtime/resource.js";
 import { box } from "../runtime/box.js";
 
 // === Mid-level wiring boxes ===
@@ -193,5 +209,202 @@ export const vpc = box(
       privateRouteTables,
       natGateways,
     };
+  },
+);
+
+// === Security Group rules ===
+
+/**
+ * Adds an ingress rule allowing traffic from another security group.
+ * This is a wiring box: it creates a relationship between two SGs.
+ */
+export const allowFrom = box(
+  "allowFrom",
+  (target: SecurityGroup, source: SecurityGroup, port: number, protocol: string = "tcp"): [SecurityGroup, SecurityGroup, SecurityGroupIngress] => {
+    const rule = mkSecurityGroupIngress(deriveId(target, source, `In${port}`), {
+      groupId: target.groupId,
+      sourceSecurityGroupId: source.groupId,
+      ipProtocol: protocol,
+      fromPort: port,
+      toPort: port,
+      description: `Allow ${protocol}/${port} from ${source.logicalId}`,
+    } as any);
+    return [target, source, rule];
+  },
+);
+
+/**
+ * Adds an ingress rule allowing traffic from a CIDR range.
+ */
+export const allowFromCidr = box(
+  "allowFromCidr",
+  (target: SecurityGroup, cidr: string, port: number, protocol: string = "tcp"): [SecurityGroup, SecurityGroupIngress] => {
+    const rule = mkSecurityGroupIngress(deriveId(target, `Cidr${port}`), {
+      groupId: target.groupId,
+      cidrIp: cidr,
+      ipProtocol: protocol,
+      fromPort: port,
+      toPort: port,
+      description: `Allow ${protocol}/${port} from ${cidr}`,
+    } as any);
+    return [target, rule];
+  },
+);
+
+/**
+ * Adds an egress rule allowing traffic to another security group.
+ */
+export const allowTo = box(
+  "allowTo",
+  (source: SecurityGroup, target: SecurityGroup, port: number, protocol: string = "tcp"): [SecurityGroup, SecurityGroup, SecurityGroupEgress] => {
+    const rule = mkSecurityGroupEgress(deriveId(source, target, `Out${port}`), {
+      groupId: source,
+      destinationSecurityGroupId: target,
+      ipProtocol: protocol,
+      fromPort: port,
+      toPort: port,
+      description: `Allow ${protocol}/${port} to ${target.logicalId}`,
+    });
+    return [source, target, rule];
+  },
+);
+
+// === VPC Endpoints ===
+
+/**
+ * Creates a Gateway VPC endpoint (for S3 or DynamoDB) and associates it
+ * with the specified route tables.
+ */
+export const addGatewayEndpoint = box(
+  "addGatewayEndpoint",
+  (vpcResource: VPC, service: "s3" | "dynamodb", routeTables: RouteTable[]): VPCEndpoint => {
+    const serviceName = service === "s3"
+      ? "com.amazonaws.${AWS::Region}.s3"
+      : "com.amazonaws.${AWS::Region}.dynamodb";
+
+    return mkVPCEndpoint(deriveId(vpcResource, service, "Endpoint"), {
+      vpcId: vpcResource,
+      serviceName,
+      vpcEndpointType: "Gateway",
+      routeTableIds: routeTables.map((rt) => rt.routeTableId),
+    } as any);
+  },
+);
+
+/**
+ * Creates an Interface VPC endpoint for a given AWS service.
+ * Places it in the specified subnets with a security group.
+ */
+export const addInterfaceEndpoint = box(
+  "addInterfaceEndpoint",
+  (vpcResource: VPC, serviceName: string, subnets: readonly Subnet[], securityGroup: SecurityGroup): VPCEndpoint => {
+    const shortName = serviceName.split(".").pop() ?? serviceName;
+    return mkVPCEndpoint(deriveId(vpcResource, shortName, "Endpoint"), {
+      vpcId: vpcResource,
+      serviceName,
+      vpcEndpointType: "Interface",
+      subnetIds: subnets.map((s) => s.subnetId),
+      securityGroupIds: [securityGroup.groupId],
+    } as any);
+  },
+);
+
+// === Flow Logs ===
+
+export type FlowLogResult = {
+  readonly flowLog: FlowLog;
+  readonly logGroup: LogGroup;
+  readonly role: Role;
+};
+
+/**
+ * Enables VPC Flow Logs to CloudWatch Logs. Creates an IAM role for the
+ * flow log service, a CloudWatch Log Group, and the FlowLog resource.
+ */
+export const enableFlowLogs = box(
+  "enableFlowLogs",
+  (vpcResource: VPC, retentionDays: number = 14, trafficType: "ALL" | "ACCEPT" | "REJECT" = "ALL"): FlowLogResult => {
+    const role = mkRole(deriveId(vpcResource, "FlowLogRole"), {
+      assumeRolePolicyDocument: {
+        Version: "2012-10-17",
+        Statement: [{
+          Effect: "Allow",
+          Principal: { Service: "vpc-flow-logs.amazonaws.com" },
+          Action: "sts:AssumeRole",
+        }],
+      },
+      managedPolicyArns: [] as any,
+      policies: [{
+        policyName: "FlowLogWrite",
+        policyDocument: {
+          Version: "2012-10-17",
+          Statement: [{
+            Effect: "Allow",
+            Action: [
+              "logs:CreateLogGroup",
+              "logs:CreateLogStream",
+              "logs:PutLogEvents",
+              "logs:DescribeLogGroups",
+              "logs:DescribeLogStreams",
+            ],
+            Resource: "*",
+          }],
+        },
+      }] as any,
+    });
+
+    const logGroup = mkLogGroup(deriveId(vpcResource, "FlowLogs"), {
+      retentionInDays: retentionDays,
+    });
+
+    const flowLog = mkFlowLog(deriveId(vpcResource, "FlowLog"), {
+      resourceId: vpcResource.vpcId,
+      resourceType: "VPC",
+      trafficType,
+      logDestinationType: "cloud-watch-logs",
+      logGroupName: ref(logGroup),
+      deliverLogsPermissionArn: role,
+    });
+
+    return { flowLog, logGroup, role };
+  },
+);
+
+// === VPC Peering ===
+
+export type PeeringResult = {
+  readonly peering: VPCPeeringConnection;
+};
+
+/**
+ * Creates a VPC peering connection between two VPCs and adds routes in both
+ * directions so traffic can flow between them.
+ */
+export const peerVpcs = box(
+  "peerVpcs",
+  (
+    vpcA: VPC, routeTableA: RouteTable, cidrA: string,
+    vpcB: VPC, routeTableB: RouteTable, cidrB: string,
+  ): PeeringResult => {
+    const peering = mkVPCPeeringConnection(deriveId(vpcA, vpcB, "Peering"), {
+      vpcId: vpcA,
+      peerVpcId: vpcB,
+    });
+
+    // Route from A to B via peering
+    mkRoute(deriveId(routeTableA, vpcB, "PeerRoute"), {
+      routeTableId: routeTableA,
+      destinationCidrBlock: cidrB,
+      vpcPeeringConnectionId: peering,
+    });
+
+    // Route from B to A via peering
+    mkRoute(deriveId(routeTableB, vpcA, "PeerRoute"), {
+      routeTableId: routeTableB,
+      destinationCidrBlock: cidrA,
+      vpcPeeringConnectionId: peering,
+    });
+
+    return { peering };
   },
 );

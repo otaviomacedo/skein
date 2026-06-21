@@ -135,3 +135,54 @@ construct owns its children — you can't extract one wiring decision and reuse 
 without inheritance gymnastics. In Skein, boxes are just functions: the mid-level boxes don't
 know or care whether they're called from inside `vpc` or from user code directly. Composition
 is free.
+
+---
+
+## 5. Boxes Are for Wiring, Not for Setting Properties
+
+**A box should exist when it represents a wiring decision — a relationship between resources,
+a grant, a trigger, a policy attachment. Pure property assignment belongs at construction time
+or in plain TypeScript.**
+
+A box earns its existence when it does something you cannot do with a simple property spread:
+
+- **Creates auxiliary resources** (`grantSendMessage` creates an IAM Policy)
+- **Wires multiple resources together** (`triggerFromQueue` creates an event source mapping,
+  a policy, and a dependency between them)
+- **Encodes non-trivial logic** (`withDLQ` sets a redrive policy referencing another
+  resource's ARN)
+- **Represents a meaningful architectural decision** visible in the wiring diagram
+
+A pure property setter — one that takes a resource, sets a single scalar field, and returns
+it — does not meet these criteria. It's syntactic sugar that adds a node to the graph without
+representing a real wiring decision.
+
+```typescript
+// DON'T: wrap every setting in a box
+export const setVisibilityTimeout = box("setVisibilityTimeout",
+  (queue: Queue, seconds: number): Queue => { ... }
+);
+
+// DO: set properties at construction time
+const queue = mkQueue("WorkQueue", {
+  visibilityTimeout: 120,
+  messageRetentionPeriod: 86400,
+});
+
+// DO: make a box when it creates resources or wires things together
+export const withDLQ = box("withDLQ",
+  (queue: Queue, dlq: Queue, maxReceiveCount: number): [Queue, Queue] => { ... }
+);
+```
+
+Exceptions:
+
+- **`addEnvironment`** — merges into a map (not a scalar set), very common in pipes, and
+  the env var often carries a reference to another resource (making it a wiring concern).
+- **`addLayers`** — accumulates into an array (multiple calls compose), and layers
+  represent a dependency relationship.
+- **`addLifecycleRule` / `addCorsRule`** — accumulate into collections (multiple calls
+  compose), and they encode non-trivial structure.
+
+The rule of thumb: if a box does nothing that a user couldn't achieve by passing one more
+field to the constructor, it shouldn't be a box.

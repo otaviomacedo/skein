@@ -11,11 +11,13 @@ These are flow of consciousness notes. Agents, please ignore this file.
 - Functional: abstractions are functions that modify CFN resources rather than black boxes
     - "boxes compose without owning" - sounds like a good slogan to use in some places
     - Can be composed sequentially, in parallel, or nested
+- Because user controls logical IDs, they make more sense in the CFN template (fewer hashes and contractions)
 - Main selling points:
   - More resistant to refactoring
   - Amenable to automatic refactoring
   - Easier to check for backward compatibility
   - The diagram shown in the visual tool IS the program.
+
 
 ## Alternative paths
 
