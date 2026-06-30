@@ -6,13 +6,13 @@ An Infrastructure-as-Code framework where resources flow on typed wires through 
 
 CDK models infrastructure as a mutable construct tree. Reorganizing the tree changes logical IDs, `grant*` methods mutate via side effects, and resources hide inside constructs. Skein replaces this with flat composition of pure functions:
 
-| CDK | Skein |
-|-----|-------|
-| Construct tree, implicit resource creation | Flat composition, explicit resource flow |
-| Logical IDs from tree path (refactoring breaks IDs) | IDs explicit or derived from dependencies |
-| `grant*` mutates constructs via side effects | `grant*` returns new values + auxiliary resources |
-| Resources hidden inside constructs | Every resource visible on a wire |
-| Scope determines ownership | Boxes are context-free |
+| CDK                                                 | Skein                                             |
+|-----------------------------------------------------|---------------------------------------------------|
+| Construct tree, implicit resource creation          | Flat composition, explicit resource flow          |
+| Logical IDs from tree path (refactoring breaks IDs) | IDs explicit or derived from dependencies         |
+| `grant*` mutates constructs via side effects        | `grant*` returns new values + auxiliary resources |
+| Resources hidden inside constructs                  | Every resource visible on a wire                  |
+| Scope determines ownership                          | Boxes are context-free                            |
 
 ## Core Concepts
 
@@ -127,25 +127,15 @@ yarn test:integration  # integration tests
 
 Uses Vitest for unit/integration tests and fast-check for property-based compatibility checking.
 
-## Formal Foundations
-
-The categorical semantics is developed in `categorical-semantics.tex`. Key results:
-
-- The framework forms a symmetric gs-monoidal category with a partial comonoid structure
-- Independent transformers commute (order doesn't matter when patches are disjoint)
-- Program equivalence is decidable for closed, terminating programs
-- Patch-compatibility composes across library upgrades
-- Backwards compatibility is decidable for structurally determined boxes
-
 ## Examples
 
-| Example | Description |
-|---------|-------------|
-| `simple` | Bucket + Lambda with encryption and read grant |
-| `static-site` | S3 + CloudFront static website |
-| `api-backend` | API Gateway + Lambda + DynamoDB |
-| `data-pipeline` | Event-driven data processing pipeline |
-| `ecommerce` | Full order processing platform: VPC, Fargate, Step Functions, SNS fan-out, DLQ monitoring |
+| Example         | Description                                                                               |
+|-----------------|-------------------------------------------------------------------------------------------|
+| `simple`        | Bucket + Lambda with encryption and read grant                                            |
+| `static-site`   | S3 + CloudFront static website                                                            |
+| `api-backend`   | API Gateway + Lambda + DynamoDB                                                           |
+| `data-pipeline` | Event-driven data processing pipeline                                                     |
+| `ecommerce`     | Full order processing platform: VPC, Fargate, Step Functions, SNS fan-out, DLQ monitoring |
 
 ## License
 
