@@ -368,7 +368,7 @@ function generateServiceFile(
 ): string {
   const lines: string[] = [];
 
-  lines.push(`import { Resource, makeResource, getAtt } from "../runtime/resource.js";`);
+  lines.push(`import { type Resource, makeResource, getAtt } from "../runtime/resource.js";`);
 
   const needsTag = resources.some(([cfnType, rs]) => {
     const allProps = Object.values(rs.Properties ?? {});
@@ -380,22 +380,23 @@ function generateServiceFile(
     );
   });
   if (needsTag) {
-    lines.push(`import { Tag } from "./common.js";`);
+    lines.push(`import type { Tag } from "./common.js";`);
   }
 
   // Collect cross-service imports needed for typed refs
-  const crossImports = new Map<string, Set<string>>();
+  const crossImports = new Map<string, { types: Set<string>; values: Set<string> }>();
   for (const [, , typedRefs] of resources) {
     for (const tr of typedRefs) {
       if (tr.targetService !== service) {
-        if (!crossImports.has(tr.targetService)) crossImports.set(tr.targetService, new Set());
-        crossImports.get(tr.targetService)!.add(tr.targetResourceName);
-        crossImports.get(tr.targetService)!.add(`get${tr.targetResourceName}Att`);
+        if (!crossImports.has(tr.targetService)) crossImports.set(tr.targetService, { types: new Set(), values: new Set() });
+        crossImports.get(tr.targetService)!.types.add(tr.targetResourceName);
+        crossImports.get(tr.targetService)!.values.add(`get${tr.targetResourceName}Att`);
       }
     }
   }
-  for (const [svc, names] of crossImports) {
-    lines.push(`import { ${[...names].join(", ")} } from "./${svc}.js";`);
+  for (const [svc, { types, values }] of crossImports) {
+    const parts = [...[...types].map(t => `type ${t}`), ...values];
+    lines.push(`import { ${parts.join(", ")} } from "./${svc}.js";`);
   }
 
   // Check if we need getAtt helpers from within the same service for typed refs
@@ -571,7 +572,7 @@ function main() {
   }
 
   // Generate index
-  const indexContent = `export { Tag } from "./common.js";\n` + generateIndex(serviceExports);
+  const indexContent = `export type { Tag } from "./common.js";\n` + generateIndex(serviceExports);
   writeFileSync(join(outputDir, "index.ts"), indexContent);
 
   // Generate fixtures registry

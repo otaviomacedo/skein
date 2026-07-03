@@ -8,13 +8,13 @@
  *   CloudWatch Alarm on DLQ → SNS Topic (notification)
  */
 
-import { mkTable } from "../../src/generated/dynamodb.js";
-import { mkQueue } from "../../src/generated/sqs.js";
-import { mkTopic } from "../../src/generated/sns.js";
-import { withDLQ } from "../../src/boxes/sqs.js";
-import { alarmOnMetric, notifyOnAlarm } from "../../src/boxes/monitoring.js";
-import { scheduledProcessor } from "../../src/boxes/scheduled-processor.js";
-import { queueProcessor } from "../../src/boxes/queue-processor.js";
+import { mkTable } from "../../src/generated/dynamodb";
+import { mkQueue } from "../../src/generated/sqs";
+import { mkTopic } from "../../src/generated/sns";
+import { withDLQ } from "../../src/boxes/sqs";
+import { alarmOnMetric, notifyOnAlarm } from "../../src/boxes/monitoring";
+import { scheduledProcessor } from "../../src/boxes/scheduled-processor";
+import { queueProcessor } from "../../src/boxes/queue-processor";
 
 // === Data Stores ===
 
@@ -64,7 +64,7 @@ scheduledProcessor("Processor", {
   },
 });
 
-queueProcessor("Reprocessor", {
+const fn = queueProcessor("Reprocessor", {
   table: dataTable,
   queue: failureQueue,
   functionProps: {

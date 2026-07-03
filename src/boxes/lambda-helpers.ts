@@ -1,6 +1,7 @@
-import { mkRole } from "../generated/iam.js";
+import { mkRole, mkPolicy } from "../generated/iam.js";
 import { mkLambdaFunction } from "../generated/lambda.js";
 import type { LambdaFunction, LambdaFunctionProps } from "../generated/lambda.js";
+import { ref } from "../runtime/resource.js";
 import { box } from "../runtime/box.js";
 
 export type SimpleFunctionProps = Omit<LambdaFunctionProps, "role"> & {
@@ -28,6 +29,21 @@ export const mkLambda = box(
         ...(managedPolicies ?? []),
       ] as any,
     });
+
+    if (props.code.s3Bucket) {
+      mkPolicy(`${logicalId}CodeAccessPolicy`, {
+        policyName: `${logicalId}CodeAccessPolicy`,
+        policyDocument: {
+          Version: "2012-10-17",
+          Statement: [{
+            Effect: "Allow",
+            Action: ["s3:GetObject"],
+            Resource: [`arn:aws:s3:::${props.code.s3Bucket}/${props.code.s3Key}`],
+          }],
+        },
+        roles: [ref(role)],
+      });
+    }
 
     return mkLambdaFunction(logicalId, { ...fnProps, role } as LambdaFunctionProps);
   },
