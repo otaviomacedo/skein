@@ -276,30 +276,69 @@ function promoteEdges(
     let from = findVisibleAncestor(edge.from, visibleNodes, nodesById);
     let to = findVisibleAncestor(edge.to, visibleNodes, nodesById);
     if (!from || !to) continue;
+    if (from === to) continue;
+
+    const originalSource = nodesById.get(edge.from)!;
+    const originalTarget = nodesById.get(edge.to)!;
+    const outputResource = originalSource.outputs[edge.output]?.resourceId;
+    const inputResource = originalTarget.inputs[edge.input]?.resourceId;
+
+    let output = edge.output;
+    let input = edge.input;
+
+    // Remap output index when source was promoted to an ancestor
+    if (from !== edge.from && outputResource) {
+      const ancestor = nodesById.get(from)!;
+      const newIndex = ancestor.outputs.findIndex(o => o.resourceId === outputResource);
+      if (newIndex >= 0) output = newIndex;
+      else continue;
+    }
+
+    // Remap input index when target was promoted to an ancestor
+    if (to !== edge.to && inputResource) {
+      const ancestor = nodesById.get(to)!;
+      const newIndex = ancestor.inputs.findIndex(i => i.resourceId === inputResource);
+      if (newIndex >= 0) input = newIndex;
+      else continue;
+    }
 
     // If source is an expanded group, re-route to the internal child that
     // produces the relevant output
-    if (from && expandedNodes.has(from)) {
-      const sourceNode = nodesById.get(from)!;
-      const outputResource = sourceNode.outputs[edge.output]?.resourceId;
-      if (outputResource) {
-        const internalProducer = findLastChildWithOutput(sourceNode, outputResource, nodesById, visibleNodes);
-        if (internalProducer) from = internalProducer;
+    if (expandedNodes.has(from)) {
+      const fromNode = nodesById.get(from)!;
+      const resource = fromNode.outputs[output]?.resourceId;
+      if (resource) {
+        const internalProducer = findLastChildWithOutput(fromNode, resource, nodesById, visibleNodes);
+        if (internalProducer) {
+          const producerNode = nodesById.get(internalProducer)!;
+          const producerOutputIdx = producerNode.outputs.findIndex(o => o.resourceId === resource);
+          if (producerOutputIdx >= 0) {
+            from = internalProducer;
+            output = producerOutputIdx;
+          }
+        }
       }
     }
 
     // If target is an expanded group, re-route to the internal child that
     // consumes the relevant input
-    if (to && expandedNodes.has(to)) {
-      const targetNode = nodesById.get(to)!;
-      const inputResource = targetNode.inputs[edge.input]?.resourceId;
-      if (inputResource) {
-        const internalConsumer = findFirstChildWithInput(targetNode, inputResource, nodesById, visibleNodes);
-        if (internalConsumer) to = internalConsumer;
+    if (expandedNodes.has(to)) {
+      const toNode = nodesById.get(to)!;
+      const resource = toNode.inputs[input]?.resourceId;
+      if (resource) {
+        const internalConsumer = findFirstChildWithInput(toNode, resource, nodesById, visibleNodes);
+        if (internalConsumer) {
+          const consumerNode = nodesById.get(internalConsumer)!;
+          const consumerInputIdx = consumerNode.inputs.findIndex(i => i.resourceId === resource);
+          if (consumerInputIdx >= 0) {
+            to = internalConsumer;
+            input = consumerInputIdx;
+          }
+        }
       }
     }
 
-    result.push({ from, output: edge.output, to, input: edge.input });
+    result.push({ from, output, to, input });
   }
   return result;
 }
